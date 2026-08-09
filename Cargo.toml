@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/ping", "crates/ipconfig", "crates/tracert", "crates/pathping", "crates/i18n", "crates/trace-core"]
+members = ["crates/ping", "crates/ipconfig", "crates/tracert", "crates/pathping", "crates/whoami", "crates/hostname", "crates/ver", "crates/i18n", "crates/trace-core"]
 
 [workspace.package]
 version = "0.1.0"

@@ -1,0 +1,16 @@
+[package]
+name = "whoami"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust 重写的 Windows whoami.exe（跨平台整活）"
+
+[[bin]]
+name = "whoami"
+path = "src/main.rs"
+
+[dependencies]
+whoami_rs = { package = "whoami", version = "2.1" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation"] }

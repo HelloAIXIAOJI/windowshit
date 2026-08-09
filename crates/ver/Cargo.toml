@@ -1,0 +1,16 @@
+[package]
+name = "ver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust 重写的 Windows ver.exe（跨平台整活）"
+
+[[bin]]
+name = "ver"
+path = "src/main.rs"
+
+[dependencies]
+os_info = { version = "3.15", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_Registry"] }

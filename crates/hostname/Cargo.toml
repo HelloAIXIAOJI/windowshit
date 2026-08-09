@@ -1,0 +1,17 @@
+[package]
+name = "hostname"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust 重写的 Windows hostname.exe（跨平台整活）"
+
+[[bin]]
+name = "hostname"
+path = "src/main.rs"
+
+[dependencies]
+hostname_rs = { package = "hostname", version = "0.4" }
+windowshit-i18n = { path = "../i18n" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation"] }
