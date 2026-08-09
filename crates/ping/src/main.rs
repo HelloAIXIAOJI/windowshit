@@ -1,16 +1,14 @@
 mod args;
-mod i18n;
 mod ping;
 
 use std::net::IpAddr;
 use std::process::ExitCode;
 
 use args::ArgError;
-use fluent::FluentArgs;
-use i18n::L10n;
 use ping::Outcome;
 use tokio::select;
 use tokio::signal;
+use windowshit_i18n::{FluentArgs, L10n};
 
 /// 让 Windows 控制台用 UTF-8 输出，避免中文乱码
 #[cfg(windows)]
@@ -37,7 +35,16 @@ fn report_arg_error(i18n: &L10n, e: ArgError) -> ExitCode {
 #[tokio::main]
 async fn main() -> ExitCode {
     // 必须先读代码页决定语言，再改 UTF-8 输出（否则语言检测读到被改掉的代码页）
-    let i18n = L10n::detect();
+    let mut i18n = L10n::detect();
+    // 注入 ping 自己的翻译与帮助
+    match i18n.lang() {
+        "zh-CN" => i18n.add_ftl(include_str!("../locales/zh-CN.ftl")),
+        _ => i18n.add_ftl(include_str!("../locales/en-US.ftl")),
+    }
+    i18n.set_help(
+        include_str!("../locales/help.zh.txt"),
+        include_str!("../locales/help.en.txt"),
+    );
 
     #[cfg(windows)]
     setup_console_utf8();

@@ -1,0 +1,18 @@
+Usage:
+    ipconfig [/? | /all]
+
+where
+    adapter             Connection name
+                       (Wildcard characters * and ? allowed, see examples)
+
+    Options:
+       /?               Display this help message
+       /all             Display full configuration information.
+
+
+By default, only the IP address, subnet mask and default gateway for each adapter
+bound to TCP/IP are displayed.
+
+Examples:
+    > ipconfig                      ... Show information
+    > ipconfig /all                 ... Show detailed information

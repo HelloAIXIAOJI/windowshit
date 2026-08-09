@@ -1,8 +1,7 @@
 //! Windows 风格命令行参数解析（对齐 ping.exe 的参数约定）。
 
-use crate::i18n::L10n;
-use fluent::FluentArgs;
 use std::net::IpAddr;
+use windowshit_i18n::{FluentArgs, L10n};
 
 /// 参数解析错误。`show_help` 表示原版在该错误后是否会打印完整帮助。
 #[derive(Debug)]
@@ -316,10 +315,12 @@ fn parse_u32_range(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::i18n::L10n;
+    use windowshit_i18n::L10n;
 
     fn l10n() -> L10n {
-        L10n::for_lang("en-US")
+        let mut l = L10n::for_lang("en-US");
+        l.add_ftl(include_str!("../locales/en-US.ftl"));
+        l
     }
 
     fn p(raw: &[&str]) -> Args {

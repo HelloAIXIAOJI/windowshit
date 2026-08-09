@@ -1,20 +1,27 @@
-//! 国际化：系统语言检测 + fluent 翻译。
+//! Windowshit 公共国际化层。
+//!
+//! 语言检测规则（还原 Windows 原版命令的行为）：
+//! Windows 上由"控制台输出代码页"决定（chcp 936 → 中文，其它 → 英文），
+//! 必须在改代码页之前调用 `detect()`。macOS/Linux 回退到系统 locale。
+//!
+//! 各组件通过 [`L10n::add_ftl`] 注入自己的翻译文件，通过 [`L10n::set_help`]
+//! 注入自己的帮助文本，避免重复实现语言检测与翻译机制。
 
-use fluent::{FluentArgs, FluentBundle, FluentResource};
+pub use fluent::FluentArgs;
+use fluent::{FluentBundle, FluentResource};
 use unic_langid::LanguageIdentifier;
 
 pub struct L10n {
     bundle: FluentBundle<FluentResource>,
     lang: String,
+    zh_help: Option<&'static str>,
+    en_help: Option<&'static str>,
 }
 
 impl L10n {
-    /// 根据系统语言自动选择界面语言。
+    /// 根据系统环境自动选择界面语言。
     ///
-    /// 实测 Windows 原版 ping 的语言由"控制台输出代码页"决定（难绷）：
-    ///   chcp 936 → 中文，chcp 437/65001 → 英文。
-    /// 这里做同样的还原，必须先于 SetConsoleOutputCP 调用，否则读到的是
-    /// 已被改掉的代码页。macOS/Linux 回退到系统 locale。
+    /// 必须在 Windows 上修改控制台代码页**之前**调用。
     pub fn detect() -> Self {
         if let Ok(lang) = std::env::var("WINDOWSHIT_LANG") {
             if !lang.is_empty() {
@@ -51,20 +58,30 @@ impl L10n {
 
     /// 直接指定语言标识符（用于测试或强制指定）。
     pub fn for_lang(lang: &str) -> Self {
-        let ftl: &str = match lang {
-            "zh-CN" => include_str!("../locales/zh-CN.ftl"),
-            _ => include_str!("../locales/en-US.ftl"),
-        };
-        let res = FluentResource::try_new(ftl.to_owned()).expect("invalid FTL resource");
         let lid: LanguageIdentifier = lang.parse().expect("invalid langid");
         let mut bundle = FluentBundle::new(vec![lid]);
         // 关闭双向文本隔离（U+2068/U+2069），Windows 原版输出不含这些字符
         bundle.set_use_isolating(false);
-        bundle.add_resource(res).expect("failed to add FTL resource");
         L10n {
             bundle,
             lang: lang.to_string(),
+            zh_help: None,
+            en_help: None,
         }
+    }
+
+    /// 注入组件自己的 FTL 翻译文本。可在构建后追加多个资源。
+    pub fn add_ftl(&mut self, ftl: &'static str) {
+        let res = FluentResource::try_new(ftl.to_owned()).expect("invalid FTL resource");
+        self.bundle
+            .add_resource(res)
+            .expect("failed to add FTL resource");
+    }
+
+    /// 注入组件自己的帮助文本（中文/英文）。
+    pub fn set_help(&mut self, zh: &'static str, en: &'static str) {
+        self.zh_help = Some(zh);
+        self.en_help = Some(en);
     }
 
     /// 取翻译后的动态消息。args 为 None 表示无参数。
@@ -83,11 +100,16 @@ impl L10n {
             .into_owned()
     }
 
+    /// 当前语言标识符（如 "zh-CN"）。
+    pub fn lang(&self) -> &str {
+        &self.lang
+    }
+
     /// 完整帮助文本（含用法）。
     pub fn help(&self) -> &'static str {
         match self.lang.as_str() {
-            "zh-CN" => include_str!("../locales/help.zh.txt"),
-            _ => include_str!("../locales/help.en.txt"),
+            "zh-CN" => self.zh_help.unwrap_or("[no help]"),
+            _ => self.en_help.unwrap_or("[no help]"),
         }
     }
 }

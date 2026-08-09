@@ -13,9 +13,7 @@ tokio.workspace = true
 surge-ping = "0.9"
 socket2 = "0.6"
 dns-lookup = "2"
-fluent = "0.17"
-sys-locale = "0.3"
-unic-langid = "0.9"
+windowshit-i18n = { path = "../i18n" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation", "Win32_Networking_WinSock"] }
