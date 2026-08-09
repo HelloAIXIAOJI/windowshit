@@ -1,0 +1,15 @@
+TASKLIST [/FO format] [/NH] [/?]
+
+Description:
+    This command line tool displays a list of currently running processes
+    on the local system.
+
+Parameter List:
+   /FO    format           Specifies the format in which the output is to
+                           be displayed. Valid values: "TABLE", "LIST", "CSV".
+
+   /NH                     Specifies that the "Column Header" should not
+                           be displayed in the output. Valid only for TABLE
+                           and CSV formats.
+
+   /?                      Displays this help message.

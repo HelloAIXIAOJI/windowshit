@@ -1,0 +1,17 @@
+[package]
+name = "tasklist"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust 重写的 Windows tasklist.exe（跨平台整活）"
+
+[[bin]]
+name = "tasklist"
+path = "src/main.rs"
+
+[dependencies]
+windowshit-i18n = { path = "../i18n" }
+sysinfo = "0.39"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_RemoteDesktop"] }

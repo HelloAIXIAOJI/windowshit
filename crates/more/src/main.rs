@@ -1,0 +1,163 @@
+//! more —— 一次显示一屏输出（复刻 Windows more.exe）。
+//!
+//! 简化实现：/S 压缩空行、/Tn 展开制表符、+n 起始行。
+//! stdout 非终端（管道）时直接全部输出；终端时分页暂停。
+
+use std::env;
+use std::fs;
+use std::io::{self, IsTerminal, Read, Write};
+use std::process::ExitCode;
+
+use windowshit_i18n::{FluentArgs, L10n};
+
+/// 让 Windows 控制台用 UTF-8 输出
+#[cfg(windows)]
+fn setup_console_utf8() {
+    // SAFETY: 只调用标准 Win32 API，无其他副作用
+    unsafe {
+        windows_sys::Win32::System::Console::SetConsoleOutputCP(65001);
+    }
+}
+
+const PAGE_LINES: usize = 23;
+
+fn main() -> ExitCode {
+    let mut i18n = L10n::detect();
+    match i18n.lang() {
+        "zh-CN" => i18n.add_ftl(include_str!("../locales/zh-CN.ftl")),
+        _ => i18n.add_ftl(include_str!("../locales/en-US.ftl")),
+    }
+    i18n.set_help(
+        include_str!("../locales/help.zh.txt"),
+        include_str!("../locales/help.en.txt"),
+    );
+
+    #[cfg(windows)]
+    setup_console_utf8();
+
+    let raw: Vec<String> = env::args().skip(1).collect();
+
+    if raw.iter().any(|a| a == "/?" || a == "-?") {
+        println!("{}", i18n.help());
+        return ExitCode::SUCCESS;
+    }
+
+    let mut squeeze = false;
+    let mut tab_size = 8usize;
+    let mut start_line: usize = 1;
+    let mut files: Vec<String> = Vec::new();
+
+    for a in &raw {
+        if a.starts_with('/') || a.starts_with('-') {
+            let up = a[1..].to_ascii_uppercase();
+            if up.starts_with('S') {
+                squeeze = true;
+            } else if let Some(n) = up.strip_prefix('T') {
+                tab_size = n.parse().unwrap_or(8);
+            }
+            // /E /C /P：扩展功能/清屏/换页符展开，简化忽略
+        } else if let Some(n) = a.strip_prefix('+') {
+            start_line = n.parse().unwrap_or(1).max(1);
+        } else {
+            files.push(a.clone());
+        }
+    }
+
+    // 读取全部输入：文件列表或 stdin
+    let mut content = String::new();
+    if files.is_empty() {
+        let mut buf = String::new();
+        if io::stdin().read_to_string(&mut buf).is_err() {
+            return ExitCode::from(1);
+        }
+        content = buf;
+    } else {
+        for f in &files {
+            match fs::read_to_string(f) {
+                Ok(c) => content.push_str(&c),
+                Err(e) => {
+                    let err = e.to_string();
+                    let mut a = FluentArgs::new();
+                    a.set("file", f.as_str());
+                    a.set("err", &err);
+                    eprintln!("{}", i18n.tr("error-open-file", Some(&a)));
+                    return ExitCode::from(1);
+                }
+            }
+        }
+    }
+
+    // 切行、去掉行尾 \r
+    let mut lines: Vec<String> = content
+        .lines()
+        .map(|l| l.strip_suffix('\r').unwrap_or(l).to_string())
+        .collect();
+
+    // /S 压缩连续空行
+    if squeeze {
+        let mut squeezed: Vec<String> = Vec::new();
+        let mut prev_blank = false;
+        for l in lines {
+            let blank = l.trim().is_empty();
+            if blank && prev_blank {
+                continue;
+            }
+            squeezed.push(l);
+            prev_blank = blank;
+        }
+        lines = squeezed;
+    }
+
+    // 展开制表符 /Tn
+    if tab_size > 0 && lines.iter().any(|l| l.contains('\t')) {
+        for l in lines.iter_mut() {
+            let mut out = String::new();
+            let mut col = 0usize;
+            for ch in l.chars() {
+                if ch == '\t' {
+                    let spaces = tab_size - (col % tab_size);
+                    out.push_str(&" ".repeat(spaces));
+                    col += spaces;
+                } else {
+                    out.push(ch);
+                    col += 1;
+                }
+            }
+            *l = out;
+        }
+    }
+
+    // 起始行 +n
+    if start_line > 1 {
+        let skip = (start_line - 1).min(lines.len());
+        lines.drain(..skip);
+    }
+
+    let stdout_terminal = io::stdout().is_terminal();
+    let stdin_terminal = io::stdin().is_terminal();
+    let mut stdout = io::stdout();
+
+    let mut shown = 0usize;
+    for line in &lines {
+        let _ = writeln!(stdout, "{line}");
+        shown += 1;
+
+        // 分页暂停：只在 stdout 是终端且还有更多内容时
+        if stdout_terminal && shown % PAGE_LINES == 0 {
+            let remaining = lines.len();
+            if shown < remaining {
+                let _ = write!(stdout, "-- More -- ");
+                let _ = stdout.flush();
+                if stdin_terminal {
+                    // 读一个按键（Windows/Linux 通用：读一行）
+                    let mut key = String::new();
+                    let _ = io::stdin().read_line(&mut key);
+                }
+                let _ = write!(stdout, "\r");
+                let _ = stdout.flush();
+            }
+        }
+    }
+
+    ExitCode::SUCCESS
+}

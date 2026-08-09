@@ -1,0 +1,31 @@
+# Windowshit systeminfo - 简体中文（zh-CN）
+
+# 字段标签
+host-name = Host Name
+os-name = OS Name
+os-version = OS Version
+os-manufacturer = OS Manufacturer
+os-configuration = OS Configuration
+os-build-type = OS Build Type
+registered-owner = Registered Owner
+registered-org = Registered Organization
+product-id = Product ID
+original-install = Original Install Date
+boot-time = System Boot Time
+sys-manufacturer = System Manufacturer
+sys-model = System Model
+sys-type = System Type
+processors = Processor(s)
+bios-version = BIOS Version
+windows-dir = Windows Directory
+system-dir = System Directory
+total-physical = Total Physical Memory
+available-physical = Available Physical Memory
+vm-max = Virtual Memory: Max Size
+vm-available = Virtual Memory: Available
+vm-in-use = Virtual Memory: In Use
+network-cards = Network Card(s)
+installed = { $count } NIC(s) Installed.
+connection-name = Connection Name
+ip-addresses = IP address(es)
+media-disconnected = Media disconnected

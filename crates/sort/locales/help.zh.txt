@@ -1,0 +1,28 @@
+SORT [/R] [/+n] [/M kilobytes] [/L locale] [/REC recordbytes]
+    [[drive1:][path1]filename1] [/T [drive2:][path2]]
+    [/O [drive3:][path3]filename3]
+
+    /+n                         指定开始每次比较的字符数 n。/+3 表示每次比较
+                                从每行的第 3 个字符开始。少于 n 个字符的行
+                                排在其他行之前。默认情况下比较从每行的第一
+                                个字符开始。
+
+    /L[OCALE] locale            用指定区域设置替代系统默认区域设置。"C" 区域
+                                设置产生最快的排序顺序，且目前是唯一的选择。
+                                排序始终不区分大小写。
+
+    /M[EMORY] kilobytes         指定用于排序的主内存量，以千字节为单位。内存
+                                大小始终向上取整为四兆字节的倍数。
+
+    /R[EVERSE]                  反转排序顺序；也就是说，从 Z 到 A 排序，然后
+                                从 9 到 0。
+
+    /REC[ORD_MAXIMUM] characters  指定记录中的最大字符数（默认 4096，最大
+                                65535）。
+
+    /T[EMPORARY] [drive2:][path2]  指定保存排序工作存储的目录路径，以防数据
+                                无法放入主内存。默认使用系统临时目录。
+
+    /O[UTPUT] [drive3:][path3]filename3
+                                指定要将排序后的输入写入的文件。如果未指定，
+                                数据将写入标准输出。

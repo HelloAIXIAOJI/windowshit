@@ -1,0 +1,16 @@
+[package]
+name = "sort"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust 重写的 Windows sort.exe（跨平台整活）"
+
+[[bin]]
+name = "sort"
+path = "src/main.rs"
+
+[dependencies]
+windowshit-i18n = { path = "../i18n" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation"] }
