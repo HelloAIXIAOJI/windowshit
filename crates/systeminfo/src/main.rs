@@ -90,6 +90,7 @@ fn reg_str(path: &str, name: &str) -> Option<String> {
 }
 
 #[cfg(not(windows))]
+#[allow(dead_code)]
 fn reg_str(_path: &str, _name: &str) -> Option<String> {
     None
 }
