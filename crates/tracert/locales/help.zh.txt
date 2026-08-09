@@ -1,0 +1,10 @@
+用法: tracert [-d] [-h maximum_hops] [-w timeout]
+               [-S srcaddr] [-4] [-6] target_name
+
+选项:
+    -d                 不将地址解析成主机名。
+    -h maximum_hops    搜索目标的最大跃点数。
+    -w timeout         等待每个回复的超时时间(毫秒)。
+    -S srcaddr         要使用的源地址。
+    -4                 强制使用 IPv4。
+    -6                 强制使用 IPv6。

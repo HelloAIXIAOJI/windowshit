@@ -1,7 +1,7 @@
 //! 跨平台网络适配器数据层。
 //!
 //! Windows 用 `ipconfig` crate（封装 GetAdaptersAddresses）；
-//! Linux/macOS 用 `netdev` + `network-interface` + `resolv-conf`。
+//! Linux/macOS 用 `netdev`（0.46，自带地址/前缀/scope/网关/DNS，无需其它 crate）。
 //! 各平台只做数据采集与适配器标题归类，不重复实现网络栈逻辑。
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -39,26 +39,6 @@ pub fn get_adapters() -> Result<Vec<AdapterData>, String> {
     #[cfg(not(windows))]
     {
         unix_adapters()
-    }
-}
-
-/// DNS 服务器列表（unix 上全局读 resolv.conf，Windows 上按适配器返回）。
-#[cfg(not(windows))]
-fn global_dns_servers() -> Vec<IpAddr> {
-    #[cfg(not(windows))]
-    {
-        let content = match std::fs::read_to_string("/etc/resolv.conf") {
-            Ok(c) => c,
-            Err(_) => return Vec::new(),
-        };
-        match resolv_conf::Config::parse(&content) {
-            Ok(cfg) => cfg.nameservers.into_iter().map(IpAddr::V4).collect(),
-            Err(_) => Vec::new(),
-        }
-    }
-    #[cfg(windows)]
-    {
-        Vec::new() // Windows 端按适配器从 AdapterData.dns 取
     }
 }
 
@@ -106,13 +86,8 @@ fn windows_adapters() -> Result<Vec<AdapterData>, String> {
                     }
                 }
                 IpAddr::V6(v6) => {
-                    // 去掉 IPv6 地址的 scope id（%数字），原版 ipconfig 不显示
-                    let mut v6 = *v6;
-                    if v6.segments()[0] == 0xfe80 {
-                        v6 = v6.to_owned();
-                    }
                     let plen = v6_prefixes.first().copied().unwrap_or(64);
-                    ipv6.push((v6, plen));
+                    ipv6.push((*v6, plen));
                     if !v6_prefixes.is_empty() {
                         v6_prefixes.remove(0);
                     }
@@ -138,56 +113,41 @@ fn windows_adapters() -> Result<Vec<AdapterData>, String> {
 
 #[cfg(not(windows))]
 fn unix_adapters() -> Result<Vec<AdapterData>, String> {
-    use network_interface::{Addr, NetworkInterface, NetworkInterfaceConfig};
+    use netdev::net::mac::MacAddr;
 
-    let interfaces = NetworkInterface::get_all().map_err(|e| e.to_string())?;
-    let netdev_interfaces = netdev::get_interfaces();
+    let interfaces = netdev::get_interfaces();
     let mut out = Vec::new();
 
     for iface in interfaces {
-        let mut ipv4: Vec<(Ipv4Addr, u8)> = Vec::new();
-        let mut ipv6: Vec<(Ipv6Addr, u8)> = Vec::new();
-        for addr in iface.addrs {
-            match addr {
-                Addr::V4(v4) => {
-                    let plen = v4.netmask.map(prefix_from_mask4).unwrap_or(24);
-                    ipv4.push((v4.ip, plen));
-                }
-                Addr::V6(v6) => {
-                    let plen = v6.netmask.map(prefix_from_mask6).unwrap_or(64);
-                    ipv6.push((v6.ip, plen));
-                }
-            }
-        }
-
-        let kind = if iface.name.starts_with("lo") {
-            AdapterKind::Loopback
-        } else if iface.name.starts_with("wl") || iface.name.starts_with("wlan") || iface.name.starts_with("wlp") {
-            AdapterKind::Wireless
-        } else if iface.name.contains("tun") || iface.name.contains("ppp") {
-            AdapterKind::Tunnel
-        } else {
-            AdapterKind::Ethernet
-        };
+        let kind = classify_kind(&iface.name);
         // 原版 ipconfig 不显示回环接口
         if kind == AdapterKind::Loopback {
             continue;
         }
 
-        let mac = iface.mac_addr().map(|m| m.to_vec());
-
-        // 网关：从 netdev 按接口名匹配
-        let mut gateways: Vec<IpAddr> = Vec::new();
-        let mut is_up = false;
-        for nd in netdev_interfaces.iter() {
-            if nd.name == iface.name {
-                is_up = nd.is_up();
-                for g in &nd.gateways {
-                    gateways.push(IpAddr::V4(g.ip_addr));
-                }
-                break;
-            }
+        let mut ipv4: Vec<(Ipv4Addr, u8)> = Vec::new();
+        for net in &iface.ipv4 {
+            ipv4.push((net.addr(), net.prefix_len()));
         }
+        let mut ipv6: Vec<(Ipv6Addr, u8)> = Vec::new();
+        for net in &iface.ipv6 {
+            ipv6.push((net.addr(), net.prefix_len()));
+        }
+
+        // MAC（netdev 的 MacAddr 是冒号格式字符串，转成字节数组，
+        // 与 Windows 分支共用横线大写格式输出）
+        let mac = iface.mac_addr.as_ref().map(mac_bytes::<MacAddr>);
+
+        // 网关：netdev 的 gateway 是 Option<NetworkDevice>（默认路由设备）
+        let gateways: Vec<IpAddr> = match &iface.gateway {
+            Some(g) => g
+                .ipv4
+                .iter()
+                .map(|v4| IpAddr::V4(*v4))
+                .chain(g.ipv6.iter().map(|v6| IpAddr::V6(*v6)))
+                .collect(),
+            None => Vec::new(),
+        };
 
         out.push(AdapterData {
             friendly_name: iface.name.clone(),
@@ -195,33 +155,47 @@ fn unix_adapters() -> Result<Vec<AdapterData>, String> {
             mac,
             ipv4,
             ipv6,
-            ipv6_scope: iface.index,
+            // link-local 的 %scope 就是接口索引
+            ipv6_scope: Some(iface.index),
             gateways,
-            dns: Vec::new(),
-            is_up,
+            dns: iface.dns_servers.clone(),
+            is_up: iface.is_up(),
             kind,
         });
-    }
-
-    // 为所有适配器统一挂上全局 DNS
-    let dns = global_dns_servers();
-    for a in out.iter_mut() {
-        a.dns = dns.clone();
     }
 
     Ok(out)
 }
 
+/// 按接口名粗略分类（Linux/macOS 命名约定）。
 #[cfg(not(windows))]
-fn prefix_from_mask4(mask: Ipv4Addr) -> u8 {
-    let bits = u32::from(mask);
-    (32 - bits.leading_zeros()) as u8
+fn classify_kind(name: &str) -> AdapterKind {
+    if name.starts_with("lo") {
+        AdapterKind::Loopback
+    } else if name.starts_with("wl") || name.starts_with("wlan") || name.starts_with("wlp") {
+        AdapterKind::Wireless
+    } else if name.contains("tun") || name.contains("tap") || name.contains("ppp") {
+        AdapterKind::Tunnel
+    } else if name.starts_with("eth")
+        || name.starts_with("en")
+        || name.starts_with("ens")
+        || name.starts_with("enp")
+    {
+        // Linux: eth0/enp3s0 等；macOS: en0 等
+        AdapterKind::Ethernet
+    } else {
+        // docker0、virbr0、veth* 等虚拟接口 → Unknown adapter（还原原版标题）
+        AdapterKind::Other
+    }
 }
 
+/// netdev 的 MacAddr（冒号格式）→ 字节数组。
 #[cfg(not(windows))]
-fn prefix_from_mask6(mask: Ipv6Addr) -> u8 {
-    let bits = u128::from(mask);
-    (128 - bits.leading_zeros()) as u8
+fn mac_bytes<M: std::fmt::Display>(m: &M) -> Vec<u8> {
+    m.to_string()
+        .split(':')
+        .filter_map(|h| u8::from_str_radix(h, 16).ok())
+        .collect()
 }
 
 /// 前缀长度 → 点分十进制子网掩码字符串（IPv4）。

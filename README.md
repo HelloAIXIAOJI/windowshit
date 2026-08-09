@@ -13,7 +13,7 @@
 | cmd | Windows 命令提示符解释器（cmd.exe） | 否 |
 | ipconfig | 显示网络配置信息（无参数 / /all） | 是 |
 | ping | 测试网络连通性 | 是 |
-| tracert | 跟踪数据包路由路径 | 否 |
+| tracert | 跟踪数据包路由路径 | 是 |
 | pathping | 结合 ping 与 tracert 的路由分析 | 否 |
 | netstat | 显示网络连接、端口和协议统计 | 否 |
 | arp | 显示 / 修改 ARP 缓存 | 否 |

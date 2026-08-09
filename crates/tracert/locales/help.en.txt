@@ -1,0 +1,10 @@
+Usage: tracert [-d] [-h maximum_hops] [-w timeout]
+               [-S srcaddr] [-4] [-6] target_name
+
+Options:
+    -d                 Do not resolve addresses to hostnames.
+    -h maximum_hops    Maximum number of hops to search for target.
+    -w timeout         Wait timeout milliseconds for each reply.
+    -S srcaddr         Source address to use.
+    -4                 Force using IPv4.
+    -6                 Force using IPv6.

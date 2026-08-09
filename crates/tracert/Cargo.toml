@@ -1,20 +1,20 @@
 [package]
-name = "ipconfig"
+name = "tracert"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Rust 重写的 Windows ipconfig.exe（跨平台整活）"
+description = "Rust 重写的 Windows tracert.exe（跨平台整活）"
 
 [[bin]]
-name = "ipconfig"
+name = "tracert"
 path = "src/main.rs"
 
 [dependencies]
 windowshit-i18n = { path = "../i18n" }
+tokio.workspace = true
+socket2 = "0.6"
+nex-packet = "0.25"
+dns-lookup = "2"
 
 [target.'cfg(windows)'.dependencies]
-ipconfig = "0.3"
 windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation"] }
-
-[target.'cfg(not(windows))'.dependencies]
-netdev = { version = "0.46", features = ["gateway"] }
