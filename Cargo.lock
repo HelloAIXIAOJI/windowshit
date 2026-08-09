@@ -181,6 +181,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "findstr"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "windows-sys 0.52.0",
+ "windowshit-i18n",
+]
+
+[[package]]
 name = "fluent"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -247,6 +256,16 @@ dependencies = [
  "futures-task",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "getmac"
+version = "0.1.0"
+dependencies = [
+ "ipconfig 0.3.4",
+ "netdev 0.46.0",
+ "windows-sys 0.52.0",
+ "windowshit-i18n",
 ]
 
 [[package]]
@@ -1363,6 +1382,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.52.0",
+ "windowshit-i18n",
+]
+
+[[package]]
 name = "type-map"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1499,6 +1526,14 @@ checksum = "c435338968042f4f59a557f690a253676d47ce13ceb55d70100e7facf6620a30"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "where"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.52.0",
+ "windowshit-i18n",
 ]
 
 [[package]]

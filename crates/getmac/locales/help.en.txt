@@ -1,0 +1,23 @@
+GETMAC [/FO format] [/NH] [/V]
+
+Description:
+    This tool enables an administrator to display the MAC address
+    for network adapters on a system.
+
+Parameter List:
+    /FO     format            Specifies the format in which the output
+                              is to be displayed.
+                              Valid values: "TABLE", "LIST", "CSV".
+
+    /NH                       Specifies that the "Column Header" should
+                              not be displayed in the output.
+                              Valid only for TABLE and CSV formats.
+
+    /V                        Specifies that verbose output is displayed.
+
+    /?                        Displays this help message.
+
+Examples:
+    GETMAC /?
+    GETMAC /FO csv
+    GETMAC /NH /V

@@ -1,0 +1,20 @@
+GETMAC [/FO format] [/NH] [/V]
+
+说明:
+    此工具可使管理员显示系统上网卡适配器的 MAC 地址。
+
+参数列表:
+    /FO     format            指定显示输出的格式。
+                             有效值: "TABLE"、"LIST"、"CSV"。
+
+    /NH                       指定输出中不显示"列标题"。
+                             仅对 TABLE 和 CSV 格式有效。
+
+    /V                        指定显示详细输出。
+
+    /?                        显示此帮助消息。
+
+示例:
+    GETMAC /?
+    GETMAC /FO csv
+    GETMAC /NH /V
