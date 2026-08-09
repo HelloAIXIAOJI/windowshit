@@ -1,0 +1,13 @@
+Usage: pathping [-n] [-h maximum_hops] [-i address] [-p period]
+                [-q num_queries] [-w timeout]
+                [-4] [-6] target_name
+
+Options:
+    -h maximum_hops  Maximum number of hops to search for target.
+    -i address       Use the specified source address.
+    -n               Do not resolve addresses to hostnames.
+    -p period        Wait period milliseconds between pings.
+    -q num_queries   Number of queries per hop.
+    -w timeout       Wait timeout milliseconds for each reply.
+    -4               Force using IPv4.
+    -6               Force using IPv6.

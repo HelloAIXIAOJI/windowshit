@@ -1,0 +1,13 @@
+用法: pathping [-n] [-h maximum_hops] [-i address] [-p period]
+                [-q num_queries] [-w timeout]
+                [-4] [-6] target_name
+
+选项:
+    -h maximum_hops  搜索目标的最大跃点数(默认 30)。
+    -i address       使用指定的源地址。
+    -n               不将地址解析成主机名。
+    -p period        两次 ping 之间等待的毫秒数(默认 250 毫秒)。
+    -q num_queries   每个跃点的查询次数(默认 100 次)。
+    -w timeout       每次回复的等待毫秒数(默认 3000 毫秒)。
+    -4               强制使用 IPv4。
+    -6               强制使用 IPv6。

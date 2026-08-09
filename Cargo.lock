@@ -608,6 +608,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
+name = "pathping"
+version = "0.1.0"
+dependencies = [
+ "dns-lookup",
+ "socket2",
+ "surge-ping",
+ "tokio",
+ "windows-sys 0.52.0",
+ "windowshit-i18n",
+ "windowshit-trace-core",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1057,7 +1070,6 @@ dependencies = [
  "dns-lookup",
  "nex-packet",
  "socket2",
- "tokio",
  "windows-sys 0.52.0",
  "windowshit-i18n",
 ]
@@ -1452,6 +1464,15 @@ dependencies = [
  "fluent",
  "sys-locale",
  "unic-langid",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "windowshit-trace-core"
+version = "0.1.0"
+dependencies = [
+ "nex-packet",
+ "socket2",
  "windows-sys 0.52.0",
 ]
 

@@ -1,0 +1,13 @@
+[package]
+name = "windowshit-trace-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Windowshit 公共 traceroute 探测层（RAW ICMP + 逐跳 TTL）"
+
+[dependencies]
+socket2 = "0.6"
+nex-packet = "0.25"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Foundation"] }
