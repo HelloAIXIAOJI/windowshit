@@ -21,18 +21,6 @@ fn setup_console_utf8() {
     }
 }
 
-/// Windows 上检测当前进程是否以管理员身份运行。
-#[cfg(windows)]
-fn is_admin() -> bool {
-    // SAFETY: 标准 API，无指针参数
-    unsafe { windows_sys::Win32::UI::Shell::IsUserAnAdmin() != 0 }
-}
-
-#[cfg(not(windows))]
-fn is_admin() -> bool {
-    true
-}
-
 /// 处理参数错误：原版无参数时直接打印完整帮助（无错误文本），
 /// 无效选项后打印完整帮助，其它参数错误只打印一行。
 fn report_arg_error(i18n: &L10n, e: ArgError) -> ExitCode {
@@ -74,12 +62,6 @@ async fn main() -> ExitCode {
 
     let target = args.target.clone().unwrap();
 
-    // -p：原版无法联系 IP 驱动（行为还原）
-    if args.hyperv {
-        eprintln!("{}", i18n.tr("error-unable-ip-driver", None));
-        return ExitCode::from(1);
-    }
-
     // -S 源地址合法性
     let src_addr = match &args.src_addr {
         Some(s) => match s.parse::<IpAddr>() {
@@ -94,12 +76,6 @@ async fn main() -> ExitCode {
         None => None,
     };
 
-    // -c：Windows 上非管理员时原版报"拒绝访问"
-    if args.compartment.is_some() && !is_admin() {
-        eprintln!("{}", i18n.tr("error-access-denied-c", None));
-        return ExitCode::from(1);
-    }
-
     // 解析目标地址
     let addr = match ping::resolve(&target, args.ipv4, args.ipv6).await {
         Ok(a) => a,
@@ -110,14 +86,6 @@ async fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-
-    // -R 配 IPv4 字面目标：原版报"could not find host"（行为还原）
-    if args.reverse_route && addr.is_ipv4() {
-        let mut a = FluentArgs::new();
-        a.set("host", &target);
-        eprintln!("{}", i18n.tr("error-cannot-resolve", Some(&a)));
-        return ExitCode::from(1);
-    }
 
     // 首行输出
     let start_line = if target.parse::<IpAddr>().is_ok() {
@@ -148,9 +116,6 @@ async fn main() -> ExitCode {
         i18n.tr("ping-start-host", Some(&a))
     };
     println!("{start_line}");
-
-    // -R（IPv6）：每个包都会报 "IP parameter problem"（行为还原）
-    let ip_param_problem = args.reverse_route && addr.is_ipv6();
 
     // 初始化 ICMP
     let client = match ping::build_client(addr, args.ttl, src_addr) {
@@ -201,11 +166,6 @@ async fn main() -> ExitCode {
                     tokio::time::sleep(std::time::Duration::from_millis(args.timeout_ms)).await;
                     return None;
                 }
-                // -R（IPv6）：原版每个包报 IP parameter problem
-                if ip_param_problem {
-                    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-                    return None;
-                }
                 Some(ping::ping_once(&mut pinger, seq, &payload, args.timeout_ms).await)
             } => {
                 match outcome {
@@ -254,8 +214,6 @@ async fn main() -> ExitCode {
                     None => {
                         if args.transmit_fail {
                             println!("{}", i18n.tr("transmit-failed", None));
-                        } else if ip_param_problem {
-                            println!("{}", i18n.tr("ip-param-problem", None));
                         }
                     }
                 }

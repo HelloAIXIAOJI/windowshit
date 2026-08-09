@@ -36,26 +36,12 @@ pub struct Args {
     pub ttl: Option<u32>,
     /// -v 服务类型 TOS（仅 IPv4）
     pub tos: Option<u8>,
-    /// -r 记录计数跃点的路由（仅 IPv4；行为还原，未实现真实 IP 选项）
-    pub record_route: Option<u32>,
-    /// -s 计数跃点的时间戳（仅 IPv4；行为还原）
-    pub timestamp: Option<u32>,
-    /// -j 松散源路由主机列表（仅 IPv4；行为还原）
-    pub loose_route: Option<Vec<String>>,
-    /// -k 严格源路由主机列表（仅 IPv4；行为还原）
-    pub strict_route: Option<Vec<String>>,
     /// -w 等待每次回复的超时时间（毫秒，默认 4000）
     pub timeout_ms: u64,
     /// -w 的值非数字时原版进入"发送失败"模式（transmit failed）
     pub transmit_fail: bool,
-    /// -R 使用路由标头测试反向路由（仅 IPv6）
-    pub reverse_route: bool,
     /// -S 要使用的源地址
     pub src_addr: Option<String>,
-    /// -c 路由隔离舱标识符
-    pub compartment: Option<u32>,
-    /// -p Ping Hyper-V 网络虚拟化提供程序地址
-    pub hyperv: bool,
     /// -4 强制 IPv4
     pub ipv4: bool,
     /// -6 强制 IPv6（与 -4 同时使用时报错，按出现顺序）
@@ -76,16 +62,9 @@ impl Default for Args {
             no_fragment: false,
             ttl: None,
             tos: None,
-            record_route: None,
-            timestamp: None,
-            loose_route: None,
-            strict_route: None,
             timeout_ms: 4000,
             transmit_fail: false,
-            reverse_route: false,
             src_addr: None,
-            compartment: None,
-            hyperv: false,
             ipv4: false,
             ipv6: false,
             help: false,
@@ -101,13 +80,8 @@ enum OptKind {
     Size,
     Ttl,
     Tos,
-    RecordRoute,
-    Timestamp,
-    LooseRoute,
-    StrictRoute,
     Timeout,
     SrcAddr,
-    Compartment,
 }
 
 /// 解析命令行参数。错误返回按当前语言翻译的提示。
@@ -136,26 +110,27 @@ pub fn parse(raw: &[String], i18n: &L10n) -> Result<Args, ArgError> {
             let (flag, rest) = if opt.len() > 1 { opt.split_at(1) } else { (opt, "") };
             let inline_val: Option<&str> = if rest.is_empty() { None } else { Some(rest) };
 
+            // 尚未真正实现的选项：明确报错，不假装支持
+            const UNSUPPORTED: &[&str] = &["r", "s", "j", "k", "R", "c", "p"];
+            if UNSUPPORTED.contains(&flag) {
+                let mut a = FluentArgs::new();
+                a.set("flag", flag);
+                return Err(ArgError::new(i18n, "error-unsupported", Some(&a), false));
+            }
+
             let kind = match flag {
                 "t" => OptKind::Flag,
                 "a" => OptKind::Flag,
                 "?" | "h" => OptKind::Flag,
                 "f" => OptKind::Flag,
-                "R" => OptKind::Flag,
-                "p" => OptKind::Flag,
                 "4" => OptKind::Flag,
                 "6" => OptKind::Flag,
                 "n" => OptKind::Count,
                 "l" => OptKind::Size,
                 "i" => OptKind::Ttl,
                 "v" => OptKind::Tos,
-                "r" => OptKind::RecordRoute,
-                "s" => OptKind::Timestamp,
-                "j" => OptKind::LooseRoute,
-                "k" => OptKind::StrictRoute,
                 "w" => OptKind::Timeout,
                 "S" => OptKind::SrcAddr,
-                "c" => OptKind::Compartment,
                 _ => {
                     let mut a = FluentArgs::new();
                     a.set("flag", flag);
@@ -175,13 +150,8 @@ pub fn parse(raw: &[String], i18n: &L10n) -> Result<Args, ArgError> {
                     | OptKind::Size
                     | OptKind::Ttl
                     | OptKind::Tos
-                    | OptKind::RecordRoute
-                    | OptKind::Timestamp
-                    | OptKind::LooseRoute
-                    | OptKind::StrictRoute
                     | OptKind::Timeout
                     | OptKind::SrcAddr
-                    | OptKind::Compartment
             );
 
             let value: Option<String> = if take_value {
@@ -223,8 +193,6 @@ pub fn parse(raw: &[String], i18n: &L10n) -> Result<Args, ArgError> {
                     "a" => args.resolve_name = true,
                     "?" | "h" => args.help = true,
                     "f" => args.no_fragment = true,
-                    "R" => args.reverse_route = true,
-                    "p" => args.hyperv = true,
                     "4" => {
                         args.ipv4 = true;
                         family_order.push("4");
@@ -264,18 +232,6 @@ pub fn parse(raw: &[String], i18n: &L10n) -> Result<Args, ArgError> {
                 OptKind::Tos => {
                     args.tos = Some(parse_u32_range(&value, "v", 0, 255, i18n)? as u8);
                 }
-                OptKind::RecordRoute => {
-                    args.record_route = Some(parse_u32_range(&value, "r", 1, 9, i18n)?);
-                }
-                OptKind::Timestamp => {
-                    args.timestamp = Some(parse_u32_range(&value, "s", 1, 4, i18n)?);
-                }
-                OptKind::LooseRoute => {
-                    args.loose_route = Some(parse_host_list(&value, "j", i18n)?);
-                }
-                OptKind::StrictRoute => {
-                    args.strict_route = Some(parse_host_list(&value, "k", i18n)?);
-                }
                 OptKind::Timeout => {
                     match value.as_deref().and_then(|v| v.parse::<u64>().ok()) {
                         Some(ms) => args.timeout_ms = ms,
@@ -287,10 +243,6 @@ pub fn parse(raw: &[String], i18n: &L10n) -> Result<Args, ArgError> {
                 }
                 OptKind::SrcAddr => {
                     args.src_addr = value;
-                }
-                OptKind::Compartment => {
-                    args.compartment =
-                        Some(parse_u32_range(&value, "c", 1, u64::from(u32::MAX), i18n)?);
                 }
             }
         } else {
@@ -359,35 +311,6 @@ fn parse_u32_range(
         ));
     }
     Ok(v.unwrap() as u32)
-}
-
-fn parse_host_list(value: &Option<String>, flag: &str, i18n: &L10n) -> Result<Vec<String>, ArgError> {
-    match value {
-        Some(v) => {
-            let list: Vec<String> = v.split(' ').map(|s| s.to_string()).collect();
-            if list.is_empty() || list.iter().any(|s| s.is_empty()) {
-                let mut a = FluentArgs::new();
-                a.set("flag", flag);
-                return Err(ArgError::new(
-                    i18n,
-                    "error-host-list",
-                    Some(&a),
-                    false,
-                ));
-            }
-            Ok(list)
-        }
-        None => {
-            let mut a = FluentArgs::new();
-            a.set("flag", flag);
-            Err(ArgError::new(
-                i18n,
-                "error-option-needs-value",
-                Some(&a),
-                false,
-            ))
-        }
-    }
 }
 
 #[cfg(test)]
@@ -479,5 +402,19 @@ mod tests {
         let e = parse(&v, &i18n).unwrap_err();
         assert_eq!(e.message, "Bad option -z.");
         assert!(e.show_help);
+    }
+
+    #[test]
+    fn unsupported_options() {
+        let i18n = l10n();
+        for flag in ["-r", "-s", "-j", "-k", "-R", "-c", "-p"] {
+            let v = vec![flag.to_string(), "127.0.0.1".to_string()];
+            let e = parse(&v, &i18n).unwrap_err();
+            assert!(
+                e.message.contains("not supported"),
+                "flag {flag}: {}",
+                e.message
+            );
+        }
     }
 }
