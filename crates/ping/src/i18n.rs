@@ -9,16 +9,33 @@ pub struct L10n {
 }
 
 impl L10n {
-    /// 根据当前系统语言自动选择界面语言。
-    /// 可通过环境变量 WINDOWSHIT_LANG 强制指定（测试/彩蛋用途）。
+    /// 根据系统语言自动选择界面语言。
+    ///
+    /// 实测 Windows 原版 ping 的语言由"控制台输出代码页"决定（难绷）：
+    ///   chcp 936 → 中文，chcp 437/65001 → 英文。
+    /// 这里做同样的还原，必须先于 SetConsoleOutputCP 调用，否则读到的是
+    /// 已被改掉的代码页。macOS/Linux 回退到系统 locale。
     pub fn detect() -> Self {
         if let Ok(lang) = std::env::var("WINDOWSHIT_LANG") {
             if !lang.is_empty() {
                 return Self::for_locale(&lang);
             }
         }
-        let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
-        Self::for_locale(&locale)
+        #[cfg(windows)]
+        {
+            // SAFETY: 标准 API，无指针参数
+            let cp = unsafe { windows_sys::Win32::System::Console::GetConsoleOutputCP() };
+            let lang = match cp {
+                936 | 950 => "zh-CN",
+                _ => "en-US",
+            };
+            return Self::for_lang(lang);
+        }
+        #[cfg(not(windows))]
+        {
+            let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
+            Self::for_locale(&locale)
+        }
     }
 
     /// 根据 BCP-47 locale 字符串（如 "zh-CN"、"en-US"）选择语言。
@@ -72,15 +89,5 @@ impl L10n {
             "zh-CN" => include_str!("../locales/help.zh.txt"),
             _ => include_str!("../locales/help.en.txt"),
         }
-    }
-
-    /// 单行用法（出错时提示）。
-    pub fn usage(&self) -> String {
-        // 从帮助文本中截取第一段（用法行块）
-        self.help()
-            .lines()
-            .take(4)
-            .collect::<Vec<_>>()
-            .join("\n")
     }
 }

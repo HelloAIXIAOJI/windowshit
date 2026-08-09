@@ -18,4 +18,4 @@ sys-locale = "0.3"
 unic-langid = "0.9"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation", "Win32_Networking_WinSock"] }
+windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation", "Win32_Networking_WinSock", "Win32_UI_Shell"] }

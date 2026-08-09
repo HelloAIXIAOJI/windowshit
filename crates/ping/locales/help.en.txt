@@ -21,6 +21,9 @@ Options:
     -k host-list   Strict source route along host-list (IPv4-only).
     -w timeout     Timeout in milliseconds to wait for each reply.
     -R             Use routing header to test reverse route also (IPv6-only).
+                   Per RFC 5095 the use of this routing header has been
+                   deprecated. Some systems may drop echo requests if
+                   this header is used.
     -S srcaddr     Source address to use.
     -c compartment Routing compartment identifier.
     -p             Ping a Hyper-V Network Virtualization provider address.

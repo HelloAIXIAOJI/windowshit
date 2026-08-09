@@ -5,6 +5,7 @@ mod ping;
 use std::net::IpAddr;
 use std::process::ExitCode;
 
+use args::ArgError;
 use fluent::FluentArgs;
 use i18n::L10n;
 use ping::Outcome;
@@ -20,22 +21,50 @@ fn setup_console_utf8() {
     }
 }
 
+/// Windows 上检测当前进程是否以管理员身份运行。
+#[cfg(windows)]
+fn is_admin() -> bool {
+    // SAFETY: 标准 API，无指针参数
+    unsafe { windows_sys::Win32::UI::Shell::IsUserAnAdmin() != 0 }
+}
+
+#[cfg(not(windows))]
+fn is_admin() -> bool {
+    true
+}
+
+/// 处理参数错误：原版无参数时直接打印完整帮助（无错误文本），
+/// 无效选项后打印完整帮助，其它参数错误只打印一行。
+fn report_arg_error(i18n: &L10n, e: ArgError) -> ExitCode {
+    if !e.message.is_empty() {
+        eprintln!("{}", e.message);
+    }
+    if e.show_help {
+        eprintln!();
+        println!("{}", i18n.help());
+    }
+    ExitCode::from(1)
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
+    // 必须先读代码页决定语言，再改 UTF-8 输出（否则语言检测读到被改掉的代码页）
+    let i18n = L10n::detect();
+
     #[cfg(windows)]
     setup_console_utf8();
 
-    let i18n = L10n::detect();
-
     let raw: Vec<String> = std::env::args().skip(1).collect();
+
+    // 无参数：原版直接打印完整帮助并退出 1，无错误文本
+    if raw.is_empty() {
+        println!("{}", i18n.help());
+        return ExitCode::from(1);
+    }
+
     let args = match args::parse(&raw, &i18n) {
         Ok(a) => a,
-        Err(msg) => {
-            eprintln!("{msg}");
-            eprintln!();
-            eprintln!("{}", i18n.usage());
-            return ExitCode::from(1);
-        }
+        Err(e) => return report_arg_error(&i18n, e),
     };
 
     if args.help {
@@ -43,30 +72,31 @@ async fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let target = match &args.target {
-        Some(t) => t.clone(),
-        None => {
-            eprintln!("{}", i18n.tr("error-no-target", None));
-            eprintln!();
-            eprintln!("{}", i18n.usage());
-            return ExitCode::from(1);
-        }
+    let target = args.target.clone().unwrap();
+
+    // -p：原版无法联系 IP 驱动（行为还原）
+    if args.hyperv {
+        eprintln!("{}", i18n.tr("error-unable-ip-driver", None));
+        return ExitCode::from(1);
+    }
+
+    // -S 源地址合法性
+    let src_addr = match &args.src_addr {
+        Some(s) => match s.parse::<IpAddr>() {
+            Ok(ip) => Some(ip),
+            Err(_) => {
+                let mut a = FluentArgs::new();
+                a.set("addr", s.as_str());
+                eprintln!("{}", i18n.tr("error-not-valid-address", Some(&a)));
+                return ExitCode::from(1);
+            }
+        },
+        None => None,
     };
 
-    // 尚未实现的 Windows 特有选项：诚实报错，而不是假装支持
-    let unsupported = [
-        (args.record_route.is_some(), "-r"),
-        (args.timestamp.is_some(), "-s"),
-        (args.loose_route.is_some(), "-j"),
-        (args.strict_route.is_some(), "-k"),
-        (args.reverse_route, "-R"),
-        (args.compartment.is_some(), "-c"),
-        (args.hyperv, "-p"),
-    ];
-    if let Some((_, flag)) = unsupported.iter().find(|(used, _)| *used) {
-        let mut a = FluentArgs::new();
-        a.set("flag", *flag);
-        eprintln!("{}", i18n.tr("error-unsupported", Some(&a)));
+    // -c：Windows 上非管理员时原版报"拒绝访问"
+    if args.compartment.is_some() && !is_admin() {
+        eprintln!("{}", i18n.tr("error-access-denied-c", None));
         return ExitCode::from(1);
     }
 
@@ -81,19 +111,13 @@ async fn main() -> ExitCode {
         }
     };
 
-    // -S 源地址解析
-    let src_addr = match &args.src_addr {
-        Some(s) => match s.parse::<IpAddr>() {
-            Ok(ip) => Some(ip),
-            Err(_) => {
-                let mut a = FluentArgs::new();
-                a.set("src", s.as_str());
-                eprintln!("{}", i18n.tr("error-bad-src", Some(&a)));
-                return ExitCode::from(1);
-            }
-        },
-        None => None,
-    };
+    // -R 配 IPv4 字面目标：原版报"could not find host"（行为还原）
+    if args.reverse_route && addr.is_ipv4() {
+        let mut a = FluentArgs::new();
+        a.set("host", &target);
+        eprintln!("{}", i18n.tr("error-cannot-resolve", Some(&a)));
+        return ExitCode::from(1);
+    }
 
     // 首行输出
     let start_line = if target.parse::<IpAddr>().is_ok() {
@@ -124,6 +148,9 @@ async fn main() -> ExitCode {
         i18n.tr("ping-start-host", Some(&a))
     };
     println!("{start_line}");
+
+    // -R（IPv6）：每个包都会报 "IP parameter problem"（行为还原）
+    let ip_param_problem = args.reverse_route && addr.is_ipv6();
 
     // 初始化 ICMP
     let client = match ping::build_client(addr, args.ttl, src_addr) {
@@ -168,47 +195,68 @@ async fn main() -> ExitCode {
             _ = signal::ctrl_c() => {
                 interrupted = true;
             }
-            outcome = ping::ping_once(&mut pinger, seq, &payload, args.timeout_ms) => {
+            outcome = async {
+                // -w 非数字：原版进入"发送失败"模式，不发包
+                if args.transmit_fail {
+                    tokio::time::sleep(std::time::Duration::from_millis(args.timeout_ms)).await;
+                    return None;
+                }
+                // -R（IPv6）：原版每个包报 IP parameter problem
+                if ip_param_problem {
+                    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                    return None;
+                }
+                Some(ping::ping_once(&mut pinger, seq, &payload, args.timeout_ms).await)
+            } => {
                 match outcome {
-                    Outcome::Reply { source, data_len, ttl, rtt_ms } => {
-                        received += 1;
-                        rtts.push(rtt_ms);
-                        let mut a = FluentArgs::new();
-                        a.set("source", source.to_string());
-                        a.set("data_len", data_len as u64);
-                        if addr.is_ipv4() {
-                            let ttl = ttl.unwrap_or(0);
-                            a.set("ttl", u64::from(ttl));
-                            if rtt_ms < 1 {
-                                println!("{}", i18n.tr("reply-v4-fast", Some(&a)));
+                    Some(outcome) => match outcome {
+                        Outcome::Reply { source, data_len, ttl, rtt_ms } => {
+                            received += 1;
+                            rtts.push(rtt_ms);
+                            let mut a = FluentArgs::new();
+                            a.set("source", source.to_string());
+                            a.set("data_len", data_len as u64);
+                            if addr.is_ipv4() {
+                                let ttl = ttl.unwrap_or(0);
+                                a.set("ttl", u64::from(ttl));
+                                if rtt_ms < 1 {
+                                    println!("{}", i18n.tr("reply-v4-fast", Some(&a)));
+                                } else {
+                                    a.set("rtt", rtt_ms as u64);
+                                    println!("{}", i18n.tr("reply-v4", Some(&a)));
+                                }
+                            } else if rtt_ms < 1 {
+                                println!("{}", i18n.tr("reply-v6-fast", Some(&a)));
                             } else {
                                 a.set("rtt", rtt_ms as u64);
-                                println!("{}", i18n.tr("reply-v4", Some(&a)));
+                                println!("{}", i18n.tr("reply-v6", Some(&a)));
                             }
-                        } else if rtt_ms < 1 {
-                            println!("{}", i18n.tr("reply-v6-fast", Some(&a)));
-                        } else {
-                            a.set("rtt", rtt_ms as u64);
-                            println!("{}", i18n.tr("reply-v6", Some(&a)));
                         }
-                    }
-                    Outcome::TimeExceeded { source } => {
-                        let mut a = FluentArgs::new();
-                        a.set("source", source.to_string());
-                        println!("{}", i18n.tr("time-exceeded", Some(&a)));
-                    }
-                    Outcome::DestUnreachable { source } => {
-                        let mut a = FluentArgs::new();
-                        a.set("source", source.to_string());
-                        println!("{}", i18n.tr("dest-unreachable", Some(&a)));
-                    }
-                    Outcome::Timeout => {
-                        println!("{}", i18n.tr("timeout", None));
-                    }
-                    Outcome::Other { source } => {
-                        let mut a = FluentArgs::new();
-                        a.set("source", source.to_string());
-                        println!("{}", i18n.tr("dest-unreachable", Some(&a)));
+                        Outcome::TimeExceeded { source } => {
+                            let mut a = FluentArgs::new();
+                            a.set("source", source.to_string());
+                            println!("{}", i18n.tr("time-exceeded", Some(&a)));
+                        }
+                        Outcome::DestUnreachable { source } => {
+                            let mut a = FluentArgs::new();
+                            a.set("source", source.to_string());
+                            println!("{}", i18n.tr("dest-unreachable", Some(&a)));
+                        }
+                        Outcome::Timeout => {
+                            println!("{}", i18n.tr("timeout", None));
+                        }
+                        Outcome::Other { source } => {
+                            let mut a = FluentArgs::new();
+                            a.set("source", source.to_string());
+                            println!("{}", i18n.tr("dest-unreachable", Some(&a)));
+                        }
+                    },
+                    None => {
+                        if args.transmit_fail {
+                            println!("{}", i18n.tr("transmit-failed", None));
+                        } else if ip_param_problem {
+                            println!("{}", i18n.tr("ip-param-problem", None));
+                        }
                     }
                 }
             }
@@ -223,7 +271,7 @@ async fn main() -> ExitCode {
         }
         seq = seq.wrapping_add(1);
 
-        // 保证发送间隔 >= 1 秒：回复快的补足间隔，超时慢的（已超过 1 秒）不额外等待
+        // 保证发送间隔 >= 1 秒（快速回复补足，超时慢的等待已超过则不等）
         let elapsed = last_send.elapsed();
         if elapsed < interval {
             let wait = interval - elapsed;
