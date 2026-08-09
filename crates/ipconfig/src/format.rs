@@ -11,6 +11,7 @@ use crate::backend::{prefix_to_mask4, AdapterData, AdapterKind};
 const FIELD_WIDTH: usize = 37;
 
 /// 字段行：label + 点填充 + ": " + 值。
+/// 值为空时冒号后不加空格（原版行为，避免尾随空格）。
 pub fn field(label: &str, value: &str) -> String {
     let mut s = format!("   {label}");
     while s.len() < FIELD_WIDTH {
@@ -20,8 +21,11 @@ pub fn field(label: &str, value: &str) -> String {
         }
     }
     s.truncate(FIELD_WIDTH);
-    // 截断后末尾可能是空格，保留（原版也有 label 后跟空格的情况）
-    format!("{s}: {value}")
+    if value.is_empty() {
+        format!("{s}:")
+    } else {
+        format!("{s}: {value}")
+    }
 }
 
 /// 适配器标题行，如 "Ethernet adapter Ethernet:"。

@@ -86,6 +86,11 @@ pub fn build_client(
     if let Some(src) = src_addr {
         builder = builder.bind(SocketAddr::new(src, 0));
     }
+    // 优先 RAW socket：Linux 的 DGRAM ICMP 收到的是裸 ICMP（无 IP 头），
+    // 拿不到 TTL（会显示 TTL=0）。RAW 下能取到 IP 头里的 TTL。
+    // Windows 上 RAW ICMP 免管理员（XP SP1 起对 ICMP 豁免），Linux 上
+    // root 或 CAP_NET_RAW 可用；创建失败时 surge-ping 自动回退 DGRAM。
+    builder = builder.sock_type_hint(socket2::Type::RAW);
     Client::new(&builder.build()).map_err(|e| e.to_string())
 }
 
