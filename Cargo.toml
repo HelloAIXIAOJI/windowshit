@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["crates/ping"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "macros", "signal"] }
+clap = { version = "4", features = ["derive"] }

@@ -1,0 +1,21 @@
+[package]
+name = "ping"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ping"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+surge-ping = "0.9"
+socket2 = "0.6"
+dns-lookup = "2"
+fluent = "0.17"
+sys-locale = "0.3"
+unic-langid = "0.9"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation", "Win32_Networking_WinSock"] }
