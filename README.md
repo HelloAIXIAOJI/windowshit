@@ -102,3 +102,7 @@
 | iexpress | 制作自解压包 | 否 |
 | tcmsetup | 配置 TAPI 客户端 | 否 |
 | loadctr / unlodctr | 加载 / 卸载性能计数器 | 否 |
+
+## 许可证
+
+本项目使用 MIT 许可证，详情请参见 [LICENSE](LICENSE) 文件。
