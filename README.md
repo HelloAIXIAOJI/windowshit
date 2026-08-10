@@ -42,7 +42,7 @@
 | choice | 提供选项供用户选择 | 否 |
 | systeminfo | 显示系统详细信息 | 是 |
 | tasklist | 列出当前运行进程 | 是 |
-| taskkill | 按 PID / 映像名结束进程 | 否 |
+| taskkill | 按 PID / 映像名结束进程 | 是 |
 | driverquery | 显示已安装驱动程序 | 否 |
 | pnputil | 管理驱动包 / 设备 | 否 |
 | msiexec | Windows Installer 管理 | 否 |
