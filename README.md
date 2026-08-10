@@ -15,7 +15,7 @@
 | ping | 测试网络连通性 | 是 |
 | tracert | 跟踪数据包路由路径 | 是 |
 | pathping | 结合 ping 与 tracert 的路由分析 | 是 |
-| netstat | 显示网络连接、端口和协议统计 | 否 |
+| netstat | 显示网络连接和端口（-a -n -o -p / -b / -q） | 是 |
 | arp | 显示 / 修改 ARP 缓存 | 否 |
 | route | 显示 / 修改 IP 路由表 | 否 |
 | nslookup | 查询 DNS 记录 | 否 |

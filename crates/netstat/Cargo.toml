@@ -1,0 +1,19 @@
+[package]
+name = "netstat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust 重写的 Windows netstat.exe（跨平台整活）"
+
+[[bin]]
+name = "netstat"
+path = "src/main.rs"
+
+[dependencies]
+netstat2 = "0.11"
+sysinfo = "0.39"
+dns-lookup = "2"
+hostname = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
