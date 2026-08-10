@@ -8,6 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use windowshit_args::{parse, Error, Flag, Kind, Unknown};
 use windowshit_i18n::L10n;
 
 /// 让 Windows 控制台用 UTF-8 输出
@@ -48,7 +49,24 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // 解析参数
+    // 解析参数；未知开关报 Invalid switch（还原原版 where 行为）
+    const FLAGS: &[Flag] = &[
+        Flag::new("R", Kind::Value),
+        Flag::new("Q", Kind::Flag),
+        Flag::new("F", Kind::Flag),
+        Flag::new("T", Kind::Flag),
+    ];
+    let parsed = match parse(&raw, FLAGS, Unknown::Error) {
+        Ok(p) => p,
+        Err(Error::Unknown(a) | Error::UnexpectedValue(a)) => {
+            eprintln!("ERROR: Invalid switch -{}.", a.trim_start_matches(['/', '-']));
+            return ExitCode::from(2);
+        }
+        Err(Error::MissingValue(a)) => {
+            eprintln!("ERROR: /{} requires a directory.", a.trim_start_matches(['/', '-']));
+            return ExitCode::from(2);
+        }
+    };
     let mut args = Args {
         recursive: None,
         quiet: false,
@@ -56,35 +74,14 @@ fn main() -> ExitCode {
         show_time: false,
         patterns: Vec::new(),
     };
-    let mut i = 0usize;
-    while i < raw.len() {
-        let a = &raw[i];
-        if a.starts_with('/') || a.starts_with('-') {
-            match a[1..].to_ascii_uppercase().as_str() {
-                "R" => {
-                    i += 1;
-                    if i >= raw.len() {
-                        eprintln!("ERROR: /R requires a directory.");
-                        return ExitCode::from(2);
-                    }
-                    args.recursive = Some(PathBuf::from(&raw[i]));
-                }
-                "Q" => args.quiet = true,
-                "F" => args.force = true,
-                "T" => args.show_time = true,
-                "?" => {
-                    println!("{}", i18n.help());
-                    return ExitCode::SUCCESS;
-                }
-                _ => {
-                    eprintln!("ERROR: Invalid switch -{}.", &a[1..]);
-                    return ExitCode::from(2);
-                }
-            }
-        } else {
-            args.patterns.push(a.clone());
-        }
-        i += 1;
+    if let Some(dir) = parsed.flags.get("R").and_then(|v| *v) {
+        args.recursive = Some(PathBuf::from(dir));
+    }
+    args.quiet = parsed.flags.contains_key("Q");
+    args.force = parsed.flags.contains_key("F");
+    args.show_time = parsed.flags.contains_key("T");
+    for p in parsed.paths {
+        args.patterns.push(p.to_string());
     }
 
     if args.patterns.is_empty() {

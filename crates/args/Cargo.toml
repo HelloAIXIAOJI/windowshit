@@ -1,0 +1,6 @@
+[package]
+name = "windowshit-args"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Windowshit 公共命令行参数解析层（精确开关匹配，未知按路径）"

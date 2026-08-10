@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use regex::RegexBuilder;
+use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 use windowshit_i18n::{FluentArgs, L10n};
 
 /// 让 Windows 控制台用 UTF-8 输出
@@ -70,55 +71,48 @@ fn main() -> ExitCode {
         files: Vec::new(),
     };
 
-    // 解析参数（/C:string 整体作为字面模式）
-    let mut i = 0usize;
-    while i < raw.len() {
-        let a = &raw[i];
-        if a.starts_with('/') || a.starts_with('-') {
-            let (flag, inline) = if let Some(rest) = a.strip_prefix('/').or_else(|| a.strip_prefix('-')) {
-                let (f, r) = if rest.len() > 1 { rest.split_at(1) } else { (rest, "") };
-                (f.to_ascii_uppercase(), if r.is_empty() { None } else { Some(r.to_string()) })
-            } else {
-                (a.clone(), None)
-            };
-            match flag.as_str() {
-                "S" => args.recursive = true,
-                "I" => args.ignore_case = true,
-                "N" => args.line_number = true,
-                "M" => args.filename_only = true,
-                "V" => args.invert = true,
-                "B" => args.begin = true,
-                "E" => args.end = true,
-                "X" => args.whole = true,
-                "L" => args.literal = true,
-                "R" => args.literal = false,
-                "C" => {
-                    // /C:string
-                    let v = match inline {
-                        Some(v) => v,
-                        None => {
-                            i += 1;
-                            if i < raw.len() {
-                                raw[i].clone()
-                            } else {
-                                String::new()
-                            }
-                        }
-                    };
-                    args.patterns.push(v);
-                    args.literal = true;
-                }
-                _ => {
-                    // 未知 /xxx：Linux 绝对路径（/tmp/x.txt）以 / 开头，
-                    // 不能当开关忽略，按文件路径处理
-                    args.files.push(a.clone());
-                }
-            }
-        } else {
-            // 非开关：文件路径（无 * 通配时）；含通配符则按文件匹配展开
-            args.files.push(a.clone());
-        }
-        i += 1;
+    // 解析参数（/C:string 整体作为字面模式）；未知 /xxx 按文件路径处理
+    const FLAGS: &[Flag] = &[
+        Flag::new("S", Kind::Flag),
+        Flag::new("I", Kind::Flag),
+        Flag::new("N", Kind::Flag),
+        Flag::new("M", Kind::Flag),
+        Flag::new("V", Kind::Flag),
+        Flag::new("B", Kind::Flag),
+        Flag::new("E", Kind::Flag),
+        Flag::new("X", Kind::Flag),
+        Flag::new("L", Kind::Flag),
+        Flag::new("R", Kind::Flag),
+        Flag::new("C", Kind::Value),
+    ];
+    let parsed = match parse(&raw, FLAGS, Unknown::Path) {
+        Ok(p) => p,
+        Err(_) => Parsed {
+            flags: Default::default(),
+            paths: raw.iter().map(String::as_str).collect(),
+        },
+    };
+    args.recursive = parsed.flags.contains_key("S");
+    args.ignore_case = parsed.flags.contains_key("I");
+    args.line_number = parsed.flags.contains_key("N");
+    args.filename_only = parsed.flags.contains_key("M");
+    args.invert = parsed.flags.contains_key("V");
+    args.begin = parsed.flags.contains_key("B");
+    args.end = parsed.flags.contains_key("E");
+    args.whole = parsed.flags.contains_key("X");
+    if parsed.flags.contains_key("L") {
+        args.literal = true;
+    }
+    if parsed.flags.contains_key("R") {
+        args.literal = false;
+    }
+    if let Some(v) = parsed.flags.get("C").and_then(|v| *v) {
+        args.patterns.push(v.to_string());
+        args.literal = true;
+    }
+    // 非开关参数：先收集，后面启发式区分模式/文件
+    for f in parsed.paths {
+        args.files.push(f.to_string());
     }
 
     // 剩余非开关参数：findstr 的 strings 出现在文件参数之前。

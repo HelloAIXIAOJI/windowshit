@@ -7,6 +7,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
+use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 use windowshit_i18n::{FluentArgs, L10n};
 
 /// 让 Windows 控制台用 UTF-8 输出
@@ -39,46 +40,46 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let mut reverse = false;
     let mut key_start: usize = 0; // /+n：从第 n 个字符开始比较（1-based）
     let mut input_file: Option<String> = None;
     let mut output_file: Option<String> = None;
 
-    let mut i = 0usize;
-    while i < raw.len() {
-        let a = &raw[i];
-        if a.starts_with('/') || a.starts_with('-') {
-            let up = a[1..].to_ascii_uppercase();
-            if up == "R" {
-                // 精确 /R：反向
-                reverse = true;
-            } else if let Some(n) = up.strip_prefix('+') {
-                // /+n：从第 n 个字符开始比较
+    // 预提取 /+n：连写数字，公共库不支持的形态
+    let mut rest: Vec<String> = Vec::new();
+    for a in &raw {
+        if let Some(up) = a.strip_prefix('/').or_else(|| a.strip_prefix('-')) {
+            if let Some(n) = up.strip_prefix('+') {
                 if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) {
                     key_start = n.parse().unwrap_or(0);
-                } else {
-                    input_file = Some(a.clone());
+                    continue;
                 }
-            } else if up == "O" {
-                // /O file
-                i += 1;
-                if i < raw.len() {
-                    output_file = Some(raw[i].clone());
-                }
-            } else if let Some(rest) = up.strip_prefix("O:") {
-                // /O:file
-                output_file = Some(rest.to_string());
-            } else if matches!(up.as_str(), "M" | "L" | "REC" | "T") {
-                // /M /L /REC /T：忽略（内存/区域/记录长度/临时目录不影响结果）
-                // 只认精确开关，避免 Linux 绝对路径被误判
-            } else {
-                // 未知 /xxx：按路径处理（Linux 绝对路径以 / 开头）
-                input_file = Some(a.clone());
             }
-        } else {
-            input_file = Some(a.clone());
         }
-        i += 1;
+        rest.push(a.clone());
+    }
+
+    // 精确开关表；未知 /xxx 一律按路径处理（Linux 绝对路径以 / 开头）
+    const FLAGS: &[Flag] = &[
+        Flag::new("R", Kind::Flag),
+        Flag::new("O", Kind::Value),
+        Flag::new("M", Kind::Ignore), // 内存/区域/记录长度/临时目录：不影响结果
+        Flag::new("L", Kind::Ignore),
+        Flag::new("REC", Kind::Ignore),
+        Flag::new("T", Kind::Ignore),
+    ];
+    let parsed = match parse(&rest, FLAGS, Unknown::Path) {
+        Ok(p) => p,
+        Err(_) => Parsed {
+            flags: Default::default(),
+            paths: rest.iter().map(String::as_str).collect(),
+        },
+    };
+    let reverse = parsed.flags.contains_key("R");
+    if let Some(v) = parsed.flags.get("O").and_then(|v| *v) {
+        output_file = Some(v.to_string());
+    }
+    if let Some(last) = parsed.paths.last() {
+        input_file = Some(last.to_string());
     }
 
     // 读输入：文件或 stdin

@@ -5,6 +5,7 @@
 
 use std::process::ExitCode;
 
+use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 use windowshit_i18n::{FluentArgs, L10n};
 
 /// 让 Windows 控制台用 UTF-8 输出
@@ -191,26 +192,22 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    // 精确开关表；未知 /xxx 忽略（原版 getmac 对未知开关不报错）
+    const FLAGS: &[Flag] = &[
+        Flag::new("FO", Kind::Value),
+        Flag::new("NH", Kind::Flag),
+        Flag::new("V", Kind::Flag),
+    ];
+    let parsed = match parse(&raw, FLAGS, Unknown::Ignore) {
+        Ok(p) => p,
+        Err(_) => Parsed::default(),
+    };
     let mut format = "TABLE".to_string();
-    let mut nh = false;
-    let mut verbose = false;
-
-    let mut i = 0usize;
-    while i < raw.len() {
-        let a = &raw[i];
-        let upper = a.to_ascii_uppercase();
-        if upper == "/FO" || upper == "-FO" {
-            i += 1;
-            if i < raw.len() {
-                format = raw[i].to_uppercase();
-            }
-        } else if upper == "/NH" || upper == "-NH" {
-            nh = true;
-        } else if upper == "/V" || upper == "-V" {
-            verbose = true;
-        }
-        i += 1;
+    if let Some(v) = parsed.flags.get("FO").and_then(|v| *v) {
+        format = v.to_uppercase();
     }
+    let nh = parsed.flags.contains_key("NH");
+    let verbose = parsed.flags.contains_key("V");
 
     if !matches!(format.as_str(), "TABLE" | "LIST" | "CSV") {
         let mut a = FluentArgs::new();

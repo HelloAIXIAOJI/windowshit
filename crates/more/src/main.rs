@@ -8,6 +8,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::process::ExitCode;
 
+use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 use windowshit_i18n::{FluentArgs, L10n};
 
 /// 让 Windows 控制台用 UTF-8 输出
@@ -42,25 +43,48 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let mut squeeze = false;
     let mut tab_size = 8usize;
     let mut start_line: usize = 1;
     let mut files: Vec<String> = Vec::new();
 
+    // 预提取特殊形态：/Tn 连写（tab 宽度）、+n（起始行）
+    let mut rest: Vec<String> = Vec::new();
     for a in &raw {
-        if a.starts_with('/') || a.starts_with('-') {
-            let up = a[1..].to_ascii_uppercase();
-            if up.starts_with('S') {
-                squeeze = true;
-            } else if let Some(n) = up.strip_prefix('T') {
-                tab_size = n.parse().unwrap_or(8);
+        if let Some(up) = a.strip_prefix('/').or_else(|| a.strip_prefix('-')) {
+            if let Some(n) = up.strip_prefix('T') {
+                if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) {
+                    tab_size = n.parse().unwrap_or(8);
+                    continue;
+                }
             }
-            // /E /C /P：扩展功能/清屏/换页符展开，简化忽略
-        } else if let Some(n) = a.strip_prefix('+') {
-            start_line = n.parse().unwrap_or(1).max(1);
-        } else {
-            files.push(a.clone());
         }
+        if let Some(n) = a.strip_prefix('+') {
+            if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) {
+                start_line = n.parse().unwrap_or(1).max(1);
+                continue;
+            }
+        }
+        rest.push(a.clone());
+    }
+
+    // 精确开关表；/T 单独出现 → 默认 8；/E /C /P 忽略；未知按路径
+    const FLAGS: &[Flag] = &[
+        Flag::new("S", Kind::Flag),
+        Flag::new("E", Kind::Ignore),
+        Flag::new("C", Kind::Ignore),
+        Flag::new("P", Kind::Ignore),
+        Flag::new("T", Kind::Ignore),
+    ];
+    let parsed = match parse(&rest, FLAGS, Unknown::Path) {
+        Ok(p) => p,
+        Err(_) => Parsed {
+            flags: Default::default(),
+            paths: rest.iter().map(String::as_str).collect(),
+        },
+    };
+    let squeeze = parsed.flags.contains_key("S");
+    for f in parsed.paths {
+        files.push(f.to_string());
     }
 
     // 读取全部输入：文件列表或 stdin

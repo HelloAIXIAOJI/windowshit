@@ -10,6 +10,7 @@ name = "tree"
 path = "src/main.rs"
 
 [dependencies]
+windowshit-args = { path = "../args" }
 windowshit-i18n = { path = "../i18n" }
 
 [target.'cfg(windows)'.dependencies]

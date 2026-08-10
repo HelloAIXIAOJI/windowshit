@@ -8,6 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 use windowshit_i18n::{FluentArgs, L10n};
 
 /// 让 Windows 控制台用 UTF-8 输出
@@ -75,18 +76,21 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let mut show_files = false;
-    let mut ascii = false;
-    let mut target: Option<PathBuf> = None;
-
-    for a in &raw {
-        // 只认精确开关；Linux 绝对路径以 / 开头，不能误判为开关
-        match a.as_str() {
-            "/F" | "-F" | "/f" | "-f" => show_files = true,
-            "/A" | "-A" | "/a" | "-a" => ascii = true,
-            _ => target = Some(PathBuf::from(a)),
-        }
-    }
+    // 只认精确开关；Linux 绝对路径以 / 开头，未知一律按路径
+    const FLAGS: &[Flag] = &[
+        Flag::new("F", Kind::Flag),
+        Flag::new("A", Kind::Flag),
+    ];
+    let parsed = match parse(&raw, FLAGS, Unknown::Path) {
+        Ok(p) => p,
+        Err(_) => Parsed {
+            flags: Default::default(),
+            paths: raw.iter().map(String::as_str).collect(),
+        },
+    };
+    let show_files = parsed.flags.contains_key("F");
+    let ascii = parsed.flags.contains_key("A");
+    let target: Option<PathBuf> = parsed.paths.last().map(|s| PathBuf::from(s));
 
     let root = match target {
         Some(t) => t,

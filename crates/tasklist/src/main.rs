@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::process::ExitCode;
 
 use sysinfo::System;
+use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 use windowshit_i18n::L10n;
 
 /// 让 Windows 控制台用 UTF-8 输出
@@ -115,22 +116,20 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    // 精确开关表；未知 /xxx 忽略（原版 tasklist 对未知开关不报错）
+    const FLAGS: &[Flag] = &[
+        Flag::new("FO", Kind::Value),
+        Flag::new("NH", Kind::Flag),
+    ];
+    let parsed = match parse(&raw, FLAGS, Unknown::Ignore) {
+        Ok(p) => p,
+        Err(_) => Parsed::default(),
+    };
     let mut format = "TABLE".to_string();
-    let mut nh = false;
-    let mut i = 0usize;
-    while i < raw.len() {
-        let a = &raw[i];
-        let up = a.to_ascii_uppercase();
-        if up.starts_with("/FO") {
-            i += 1;
-            if i < raw.len() {
-                format = raw[i].to_uppercase();
-            }
-        } else if up == "/NH" || up == "-NH" {
-            nh = true;
-        }
-        i += 1;
+    if let Some(v) = parsed.flags.get("FO").and_then(|v| *v) {
+        format = v.to_uppercase();
     }
+    let nh = parsed.flags.contains_key("NH");
 
     if !matches!(format.as_str(), "TABLE" | "LIST" | "CSV") {
         eprintln!("ERROR: Invalid argument/option - '/FO:{format}'");
