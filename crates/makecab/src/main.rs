@@ -22,7 +22,6 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 
@@ -42,61 +41,37 @@ MAKECAB [/V[n]] [/D var=value ...] /F directive_file [...]
   /L dir         Location to place destination (default is current directory).
   /V[n]          Verbosity level (1..3).";
 
-const INF_TOP: &str = ";*** BEGIN **********************************************************";
-const INF_END: &str = ";*** END ************************************************************";
-const INF_BLANK: &str = ";**                                                                **";
+// setup.inf 行宽对齐原版：每行 73 字节（`;**`/`;***` 前缀 + 内容区 + `**`）
+// 前缀 `;*** BEGIN ` 11 字节 + 62 星 = 73；`;*** END ` 9 字节 + 64 星 = 73；
+// `;**` 3 字节 + 68 空格 + 2 = 73。用代码生成避免手工数错。
+fn inf_top() -> String {
+    format!(";*** BEGIN {}", "*".repeat(58))
+}
+fn inf_end() -> String {
+    format!(";*** END {}", "*".repeat(60))
+}
+fn inf_blank() -> String {
+    format!(";**{}**", " ".repeat(64))
+}
 
-/// ctime 风格的日期字符串，如 `Tue Aug 11 05:24:25 2026`。
+/// ctime 风格的日期字符串（本地时间），如 `Tue Aug 11 05:24:25 2026`。
 fn ctime_now() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let days = secs / 86400;
-    let rem = secs % 86400;
-    let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
-    let wd = ((days + 4) % 7) as usize;
-    let mut y = 1970u32;
-    let mut d = days;
-    loop {
-        let ydays = if is_leap(y) { 366 } else { 365 };
-        if d >= ydays {
-            d -= ydays;
-            y += 1;
-        } else {
-            break;
-        }
-    }
-    let leap = is_leap(y);
-    const MD: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut mon = 0;
-    loop {
-        let md = (MD[mon] + if mon == 1 && leap { 1 } else { 0 }) as u64;
-        if d >= md {
-            d -= md;
-            mon += 1;
-        } else {
-            break;
-        }
-    }
+    let now = time::OffsetDateTime::now_local()
+        .unwrap_or_else(|_| time::OffsetDateTime::now_utc());
     const WD: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const MO: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
     format!(
         "{} {} {:2} {:02}:{:02}:{:02} {}",
-        WD[wd],
-        MO[mon],
-        d + 1,
-        h,
-        m,
-        s,
-        y
+        WD[now.weekday().number_days_from_sunday() as usize],
+        MO[now.month() as usize - 1],
+        now.day(),
+        now.hour(),
+        now.minute(),
+        now.second(),
+        now.year()
     )
-}
-
-fn is_leap(y: u32) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
 }
 
 fn join_path(dir: &str, name: &str) -> String {
@@ -216,28 +191,36 @@ fn cab_name(d: &Directives) -> String {
 }
 
 fn inf_mid(content: &str) -> String {
-    format!(";**{content:<67}**")
+    format!(";**{content:<64}**")
+}
+
+/// 原版 `;** MakeCAB Version: 5.00` 行（60 字节，非 64 填充）。
+fn inf_version() -> String {
+    format!(";** MakeCAB Version: 5.00{}**", " ".repeat(33))
 }
 
 /// 生成 setup.inf。
 fn write_setup_inf(files: &[String], sizes: &[u64], cab_name: &str) -> Result<(), String> {
     let date = ctime_now();
+    let top = inf_top();
+    let end = inf_end();
+    let blank = inf_blank();
     let mut s = String::new();
-    s.push_str(INF_TOP);
+    s.push_str(&top);
     s.push_str("\r\n");
-    s.push_str(INF_BLANK);
+    s.push_str(&blank);
     s.push_str("\r\n");
     s.push_str(&inf_mid(&format!(
         " Automatically generated on: {date}"
     )));
     s.push_str("\r\n");
-    s.push_str(INF_BLANK);
+    s.push_str(&blank);
     s.push_str("\r\n");
-    s.push_str(&inf_mid(" MakeCAB Version: 5.00"));
+    s.push_str(&inf_version());
     s.push_str("\r\n");
-    s.push_str(INF_BLANK);
+    s.push_str(&blank);
     s.push_str("\r\n");
-    s.push_str(INF_TOP);
+    s.push_str(&top);
     s.push_str("\r\n");
     s.push_str("[disk list]\r\n1,Disk 1\r\n[cabinet list]\r\n1,1,");
     s.push_str(cab_name);
@@ -245,15 +228,15 @@ fn write_setup_inf(files: &[String], sizes: &[u64], cab_name: &str) -> Result<()
     for (i, f) in files.iter().enumerate() {
         s.push_str(&format!("1,1,{},{}\r\n", basename(f), sizes[i]));
     }
-    s.push_str(INF_END);
+    s.push_str(&end);
     s.push_str("\r\n");
-    s.push_str(INF_BLANK);
+    s.push_str(&blank);
     s.push_str("\r\n");
     s.push_str(&inf_mid(&format!(" Automatically generated on: {date}")));
     s.push_str("\r\n");
-    s.push_str(INF_BLANK);
+    s.push_str(&blank);
     s.push_str("\r\n");
-    s.push_str(INF_END);
+    s.push_str(&end);
     s.push_str("\r\n");
     fs::write("setup.inf", s).map_err(|e| e.to_string())
 }
@@ -323,8 +306,8 @@ fn build_cab(
     Ok(buf)
 }
 
-/// 统计块（/F 模式输出）。
-fn print_stats(total_files: usize, before: u64, after: u64, elapsed_secs: f64) {
+/// 统计块文本（终端输出与 setup.rpt 共用，与原版一致）。
+fn stats_text(total_files: usize, before: u64, after: u64, elapsed_secs: f64) -> String {
     let ratio = if before > 0 {
         after as f64 / before as f64 * 100.0
     } else {
@@ -338,14 +321,15 @@ fn print_stats(total_files: usize, before: u64, after: u64, elapsed_secs: f64) {
     } else {
         0.0
     };
-    println!("Total files:              {total_files}");
-    println!("Bytes before:            {before}");
-    println!("Bytes after:             {after}");
-    println!("After/Before:            {ratio:.2}% compression");
-    println!(
-        "Time:                     {elapsed_secs:.2} seconds ({hr:>2} hr {min:>2} min {sec:>5.2} sec)"
-    );
-    println!("Throughput:               {tp:.2} Kb/second");
+    // 空格数逐字节对齐原版：14/12/13/12/21/15
+    format!(
+        "Total files:              {total_files}\r\n\
+Bytes before:            {before}\r\n\
+Bytes after:             {after}\r\n\
+After/Before:            {ratio:.2}% compression\r\n\
+Time:                     {elapsed_secs:.2} seconds ( {hr} hr  {min} min  {sec:.2} sec)\r\n\
+Throughput:               {tp:.2} Kb/second"
+    )
 }
 
 /// 单文件模式打包。
@@ -438,13 +422,13 @@ fn do_multi(list_file: &str, d: &Directives) -> Result<Vec<u8>, String> {
         .map(|f| fs::metadata(f).map(|m| m.len()).unwrap_or(0))
         .collect();
     write_setup_inf(&files, &sizes, &name)?;
-    let mut rpt = String::from("MakeCAB Report: ");
-    rpt.push_str(&ctime_now());
-    rpt.push_str("\r\n\r\n");
+    let elapsed = start.elapsed().as_secs_f64();
+    let stats = stats_text(files.len(), total_before, buf.len() as u64, elapsed);
+    // 原版 setup.rpt = MakeCAB Report 头 + 空行 + 统计块
+    let rpt = format!("MakeCAB Report: {}\r\n\r\n{stats}\r\n", ctime_now());
     fs::write("setup.rpt", rpt).map_err(|e| e.to_string())?;
 
-    let elapsed = start.elapsed().as_secs_f64();
-    print_stats(files.len(), total_before, buf.len() as u64, elapsed);
+    println!("{stats}");
     Ok(buf)
 }
 
