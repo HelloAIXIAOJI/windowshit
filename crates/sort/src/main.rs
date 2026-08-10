@@ -40,7 +40,7 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let mut key_start: usize = 0; // /+n：从第 n 个字符开始比较（1-based）
+    let mut key_start: usize = 0; // /+n：从第 n 个字符开始比较，存 0-based 索引（n-1）
     let mut input_file: Option<String> = None;
     let mut output_file: Option<String> = None;
 
@@ -50,7 +50,8 @@ fn main() -> ExitCode {
         if let Some(up) = a.strip_prefix('/').or_else(|| a.strip_prefix('-')) {
             if let Some(n) = up.strip_prefix('+') {
                 if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) {
-                    key_start = n.parse().unwrap_or(0);
+                    // 原版 /+n 是 1-based：/+2 = 从第 2 个字符开始 = 跳过 1 个
+                    key_start = n.parse::<usize>().unwrap_or(1).saturating_sub(1);
                     continue;
                 }
             }
@@ -114,7 +115,7 @@ fn main() -> ExitCode {
         }
     }
 
-    // 比较键：从 key_start 处开始，大小写不敏感
+    // 比较键：从 key_start（0-based）处开始，大小写不敏感
     let key = |line: &str| -> String {
         let s: String = line
             .chars()
@@ -124,10 +125,20 @@ fn main() -> ExitCode {
         s
     };
 
+    // 原版比较规则（实测确认）：key 相同则再按整行（大小写不敏感）定序
+    let full_lower = |line: &str| -> String {
+        line.chars().flat_map(char::to_lowercase).collect()
+    };
+    let cmp = |a: &str, b: &str| -> std::cmp::Ordering {
+        key(a)
+            .cmp(&key(b))
+            .then_with(|| full_lower(a).cmp(&full_lower(b)))
+    };
+
     if reverse {
-        lines.sort_by(|a, b| key(b).cmp(&key(a)));
+        lines.sort_by(|a, b| cmp(b, a));
     } else {
-        lines.sort_by(|a, b| key(a).cmp(&key(b)));
+        lines.sort_by(|a, b| cmp(a, b));
     }
 
     let mut out_text = String::new();
