@@ -15,16 +15,11 @@
 | ping | 测试网络连通性 | 是 |
 | tracert | 跟踪数据包路由路径 | 是 |
 | pathping | 结合 ping 与 tracert 的路由分析 | 是 |
-| netstat | 显示网络连接和端口（-a -n -o -p / -b / -q） | 是 |
-| arp | 显示 / 修改 ARP 缓存 | 否 |
-| route | 显示 / 修改 IP 路由表 | 否 |
-| nslookup | 查询 DNS 记录 | 否 |
 | getmac | 显示网卡 MAC 地址 | 是 |
 | fc | 比较两个文件并显示差异 | 是 |
 | findstr | 在文件中查找字符串（支持正则） | 是 |
 | sort | 对输入行排序 | 是 |
 | where | 查找匹配文件的位置 | 是 |
-| icacls | 修改文件 / 目录 ACL 权限 | 否 |
 | expand | 解压 CAB 压缩包 | 否 |
 | makecab | 制作 CAB 压缩包 | 否 |
 | replace | 替换目标目录中的文件 | 是 |
@@ -38,22 +33,14 @@
 | tasklist | 列出当前运行进程 | 是 |
 | taskkill | 按 PID / 映像名结束进程 | 是 |
 | reg | 注册表命令行操作 | 否 |
-| sc | 服务控制管理器 | 否 |
-| net | 网络 / 服务 / 用户管理 | 否 |
 | shutdown | 关机 / 重启 / 注销 | 否 |
-| powercfg | 电源管理配置 | 否 |
-| bcdedit | 启动配置数据编辑 | 否 |
 | whoami | 显示当前用户信息 | 是 |
 | hostname | 显示计算机名 | 是 |
 | ver | 显示系统版本 | 是 |
 | runas | 以其他用户身份运行程序 | 否 |
 | setx | 永久设置环境变量 | 否 |
 | clip | 将输出复制到剪贴板 | 是 |
-| schtasks | 计划任务管理 | 否 |
 | help | 显示命令帮助 | 否 |
-| dism | 部署映像服务与管理 | 否 |
-| regsvr32 | 注册 / 反注册 COM 组件 | 否 |
-| certutil | 证书服务工具 | 否 |
 
 ## 许可证
 
