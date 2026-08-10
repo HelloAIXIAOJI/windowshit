@@ -6,18 +6,10 @@
 use std::io::{self, Read};
 use std::process::ExitCode;
 
-/// 让 Windows 控制台用 UTF-8 输出
-#[cfg(windows)]
-fn setup_console_utf8() {
-    // SAFETY: 只调用标准 Win32 API，无其他副作用
-    unsafe {
-        windows_sys::Win32::System::Console::SetConsoleOutputCP(65001);
-    }
-}
+use windowshit_i18n::L10n;
 
 fn main() -> ExitCode {
-    #[cfg(windows)]
-    setup_console_utf8();
+    L10n::setup_console_utf8();
 
     // 读取 stdin 全部内容
     let mut input = String::new();

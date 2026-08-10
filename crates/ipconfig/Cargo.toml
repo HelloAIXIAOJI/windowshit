@@ -11,10 +11,4 @@ path = "src/main.rs"
 
 [dependencies]
 windowshit-i18n = { path = "../i18n" }
-
-[target.'cfg(windows)'.dependencies]
-ipconfig = "0.3"
-windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation"] }
-
-[target.'cfg(not(windows))'.dependencies]
-netdev = { version = "0.46", features = ["gateway"] }
+windowshit-netinfo = { path = "../netinfo" }

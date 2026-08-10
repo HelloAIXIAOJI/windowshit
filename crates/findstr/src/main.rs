@@ -13,15 +13,6 @@ use regex::RegexBuilder;
 use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 use windowshit_i18n::{FluentArgs, L10n};
 
-/// 让 Windows 控制台用 UTF-8 输出
-#[cfg(windows)]
-fn setup_console_utf8() {
-    // SAFETY: 只调用标准 Win32 API，无其他副作用
-    unsafe {
-        windows_sys::Win32::System::Console::SetConsoleOutputCP(65001);
-    }
-}
-
 struct Args {
     recursive: bool,
     ignore_case: bool,
@@ -47,8 +38,7 @@ fn main() -> ExitCode {
         include_str!("../locales/help.en.txt"),
     );
 
-    #[cfg(windows)]
-    setup_console_utf8();
+    L10n::setup_console_utf8();
 
     let raw: Vec<String> = env::args().skip(1).collect();
 

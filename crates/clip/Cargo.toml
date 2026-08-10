@@ -11,6 +11,4 @@ path = "src/main.rs"
 
 [dependencies]
 arboard = "3.6"
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation"] }
+windowshit-i18n = { path = "../i18n" }

@@ -4,58 +4,10 @@
 /// 跨平台用 `os_info` crate，无平台分支。
 
 use os_info::Type;
-
-/// 让 Windows 控制台用 UTF-8 输出
-#[cfg(windows)]
-fn setup_console_utf8() {
-    // SAFETY: 只调用标准 Win32 API，无其他副作用
-    unsafe {
-        windows_sys::Win32::System::Console::SetConsoleOutputCP(65001);
-    }
-}
-
-/// 读取 Windows 注册表中的 UBR（Update Build Revision），补齐 os_info
-/// 缺失的 build 号（如 10.0.22621.**2428**）。仅 Windows 存在此字段，
-/// 其它平台直接忽略。
-#[cfg(windows)]
-fn ubuild() -> Option<String> {
-    use windows_sys::Win32::System::Registry::{
-        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ,
-    };
-
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(std::iter::once(0)).collect()
-    }
-
-    // SAFETY: 标准注册表 API；UBR 是 REG_DWORD，按 u32 读取
-    unsafe {
-        let path = wide("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion");
-        let mut key: HKEY = 0;
-        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, path.as_ptr(), 0, KEY_READ, &mut key) != 0 {
-            return None;
-        }
-        let name = wide("UBR");
-        let mut value: u32 = 0;
-        let mut len: u32 = std::mem::size_of::<u32>() as u32;
-        let ret = RegQueryValueExW(
-            key,
-            name.as_ptr(),
-            std::ptr::null(),
-            std::ptr::null_mut(),
-            &mut value as *mut u32 as *mut u8,
-            &mut len,
-        );
-        RegCloseKey(key);
-        if ret != 0 || len != std::mem::size_of::<u32>() as u32 {
-            return None;
-        }
-        Some(value.to_string())
-    }
-}
+use windowshit_i18n::L10n;
 
 fn main() {
-    #[cfg(windows)]
-    setup_console_utf8();
+    L10n::setup_console_utf8();
 
     let info = os_info::get();
     let os = match info.os_type() {
@@ -65,23 +17,17 @@ fn main() {
         other => other.to_string(),
     };
 
-    let version = {
-        #[cfg(windows)]
-        {
-            let mut v = info.version().to_string();
-            if let Some(ubr) = ubuild() {
-                if !v.is_empty() {
-                    v.push('.');
-                    v.push_str(&ubr);
-                }
-            }
-            v
+    // UBR（Update Build Revision）补齐 os_info 缺失的 build 号，
+    // 如 10.0.22621.**2428**。仅 Windows 存在此字段，非 Windows 返回 None。
+    let mut version = info.version().to_string();
+    if let Some(ubr) =
+        windowshit_winreg::reg_query_dword("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "UBR")
+    {
+        if !version.is_empty() {
+            version.push('.');
+            version.push_str(&ubr.to_string());
         }
-        #[cfg(not(windows))]
-        {
-            info.version().to_string()
-        }
-    };
+    }
 
     println!("{os} [Version {version}]");
 }

@@ -112,4 +112,18 @@ impl L10n {
             _ => self.en_help.unwrap_or("[no help]"),
         }
     }
+
+    /// Windows 上把控制台输出代码页设为 UTF-8，避免中文乱码。
+    ///
+    /// 必须在 `detect()` 之后调用（语言检测读的是改之前的代码页）。
+    /// 非 Windows 平台为空操作，无需调用方写平台分支。
+    pub fn setup_console_utf8() {
+        #[cfg(windows)]
+        // SAFETY: 只调用标准 Win32 API，无其他副作用
+        unsafe {
+            windows_sys::Win32::System::Console::SetConsoleOutputCP(65001);
+        }
+        #[cfg(not(windows))]
+        {}
+    }
 }

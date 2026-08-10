@@ -12,6 +12,3 @@ path = "src/main.rs"
 [dependencies]
 hostname_rs = { package = "hostname", version = "0.4" }
 windowshit-i18n = { path = "../i18n" }
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation"] }

@@ -1,8 +1,11 @@
-//! 跨平台网络适配器数据层。
+//! windowshit-netinfo —— 跨平台网络适配器数据层（库 crate）。
 //!
 //! Windows 用 `ipconfig` crate（封装 GetAdaptersAddresses）；
-//! Linux/macOS 用 `netdev`（0.46，自带地址/前缀/scope/网关/DNS，无需其它 crate）。
-//! 各平台只做数据采集与适配器标题归类，不重复实现网络栈逻辑。
+//! Linux/macOS 用 `netdev`。各平台只做数据采集与适配器标题归类，
+//! 由本库统一，组件无需写平台分支。
+//!
+//! 被 `ipconfig`（完整字段）、`getmac`（MAC/transport）、`systeminfo`
+//! （描述/友好名/IP）三个组件复用。
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 

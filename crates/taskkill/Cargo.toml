@@ -14,6 +14,3 @@ windowshit-args = { path = "../args" }
 windowshit-i18n = { path = "../i18n" }
 sysinfo = "0.39"
 kill_tree = "0.2"
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation"] }

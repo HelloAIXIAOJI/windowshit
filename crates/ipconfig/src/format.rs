@@ -4,7 +4,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use windowshit_i18n::{FluentArgs, L10n};
 
-use crate::backend::{prefix_to_mask4, AdapterData, AdapterKind};
+use windowshit_netinfo::{prefix_to_mask4, AdapterData, AdapterKind};
 
 /// 原版字段行的对齐宽度：3 空格缩进 + label + 点填充，冒号统一落在一列。
 /// 实测原版冒号大致在第 40 列（1-based），这里取固定宽度保证对齐。

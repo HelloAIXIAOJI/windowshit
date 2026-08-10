@@ -1,18 +1,9 @@
-mod backend;
 mod format;
 
 use std::process::ExitCode;
 
 use windowshit_i18n::L10n;
-
-/// 让 Windows 控制台用 UTF-8 输出，避免中文乱码
-#[cfg(windows)]
-fn setup_console_utf8() {
-    // SAFETY: 只调用标准 Win32 API，无其他副作用
-    unsafe {
-        windows_sys::Win32::System::Console::SetConsoleOutputCP(65001);
-    }
-}
+use windowshit_netinfo::get_adapters;
 
 fn main() -> ExitCode {
     // 必须先读代码页决定语言，再改 UTF-8 输出
@@ -26,14 +17,13 @@ fn main() -> ExitCode {
         include_str!("../locales/help.en.txt"),
     );
 
-    #[cfg(windows)]
-    setup_console_utf8();
+    L10n::setup_console_utf8();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     // 无参数：显示基本信息
     if args.is_empty() {
-        return match backend::get_adapters() {
+        return match get_adapters() {
             Ok(adapters) => {
                 print!("{}", format::render_basic(&i18n, &adapters));
                 ExitCode::SUCCESS
@@ -60,7 +50,7 @@ fn main() -> ExitCode {
     }
 
     match cmd.as_str() {
-        "/all" | "-all" => match backend::get_adapters() {
+        "/all" | "-all" => match get_adapters() {
             Ok(adapters) => {
                 print!("{}", format::render_all(&i18n, &adapters));
                 ExitCode::SUCCESS

@@ -197,7 +197,7 @@ name = "clip"
 version = "0.1.0"
 dependencies = [
  "arboard",
- "windows-sys 0.52.0",
+ "windowshit-i18n",
 ]
 
 [[package]]
@@ -366,7 +366,6 @@ name = "findstr"
 version = "0.1.0"
 dependencies = [
  "regex",
- "windows-sys 0.52.0",
  "windowshit-args",
  "windowshit-i18n",
 ]
@@ -464,11 +463,10 @@ dependencies = [
 name = "getmac"
 version = "0.1.0"
 dependencies = [
- "ipconfig 0.3.4",
- "netdev 0.46.0",
- "windows-sys 0.52.0",
  "windowshit-args",
  "windowshit-i18n",
+ "windowshit-netinfo",
+ "windowshit-winreg",
 ]
 
 [[package]]
@@ -537,7 +535,6 @@ name = "hostname"
 version = "0.1.0"
 dependencies = [
  "hostname 0.4.2",
- "windows-sys 0.52.0",
  "windowshit-i18n",
 ]
 
@@ -623,10 +620,8 @@ dependencies = [
 name = "ipconfig"
 version = "0.1.0"
 dependencies = [
- "ipconfig 0.3.4",
- "netdev 0.46.0",
- "windows-sys 0.52.0",
  "windowshit-i18n",
+ "windowshit-netinfo",
 ]
 
 [[package]]
@@ -831,7 +826,6 @@ dependencies = [
 name = "more"
 version = "0.1.0"
 dependencies = [
- "windows-sys 0.52.0",
  "windowshit-args",
  "windowshit-i18n",
 ]
@@ -1302,7 +1296,6 @@ dependencies = [
  "socket2",
  "surge-ping",
  "tokio",
- "windows-sys 0.52.0",
  "windowshit-i18n",
  "windowshit-trace-core",
 ]
@@ -1703,7 +1696,6 @@ dependencies = [
 name = "sort"
 version = "0.1.0"
 dependencies = [
- "windows-sys 0.52.0",
  "windowshit-args",
  "windowshit-i18n",
 ]
@@ -1776,12 +1768,11 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "hostname 0.4.2",
- "ipconfig 0.3.4",
- "netdev 0.46.0",
  "os_info",
  "sysinfo",
- "windows-sys 0.52.0",
  "windowshit-i18n",
+ "windowshit-netinfo",
+ "windowshit-winreg",
 ]
 
 [[package]]
@@ -1790,7 +1781,6 @@ version = "0.1.0"
 dependencies = [
  "kill_tree",
  "sysinfo",
- "windows-sys 0.52.0",
  "windowshit-args",
  "windowshit-i18n",
 ]
@@ -1933,7 +1923,6 @@ dependencies = [
  "dns-lookup",
  "nex-packet",
  "socket2",
- "windows-sys 0.52.0",
  "windowshit-i18n",
 ]
 
@@ -1981,7 +1970,6 @@ dependencies = [
 name = "type"
 version = "0.1.0"
 dependencies = [
- "windows-sys 0.52.0",
  "windowshit-i18n",
 ]
 
@@ -2023,7 +2011,8 @@ name = "ver"
 version = "0.1.0"
 dependencies = [
  "os_info",
- "windows-sys 0.52.0",
+ "windowshit-i18n",
+ "windowshit-winreg",
 ]
 
 [[package]]
@@ -2134,7 +2123,6 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 name = "where"
 version = "0.1.0"
 dependencies = [
- "windows-sys 0.52.0",
  "windowshit-args",
  "windowshit-i18n",
 ]
@@ -2156,7 +2144,7 @@ name = "whoami"
 version = "0.1.0"
 dependencies = [
  "whoami 2.1.2",
- "windows-sys 0.52.0",
+ "windowshit-i18n",
 ]
 
 [[package]]
@@ -2595,11 +2583,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "windowshit-netinfo"
+version = "0.1.0"
+dependencies = [
+ "ipconfig 0.3.4",
+ "netdev 0.46.0",
+]
+
+[[package]]
 name = "windowshit-trace-core"
 version = "0.1.0"
 dependencies = [
  "nex-packet",
  "socket2",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "windowshit-winreg"
+version = "0.1.0"
+dependencies = [
  "windows-sys 0.52.0",
 ]
 

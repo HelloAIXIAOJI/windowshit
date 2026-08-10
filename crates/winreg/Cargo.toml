@@ -1,0 +1,11 @@
+[package]
+name = "windowshit-winreg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Windowshit 公共注册表读取层（Windows 专属，非 Windows 空实现）"
+
+[dependencies]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_Registry", "Win32_Foundation"] }

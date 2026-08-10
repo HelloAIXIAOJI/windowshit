@@ -1,21 +1,13 @@
 //! getmac —— 显示网卡 MAC 地址（复刻 Windows getmac.exe）。
 //!
-//! 数据层：Windows 用 `ipconfig` crate + 注册表 GUID 映射 transport name；
-//! unix 用 `netdev`。格式层跨平台共用。
+//! 数据层统一走 `windowshit-netinfo`（跨平台），注册表 GUID 反查走
+//! `windowshit-winreg`。本文件无平台分支。
 
 use std::process::ExitCode;
 
 use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 use windowshit_i18n::{FluentArgs, L10n};
-
-/// 让 Windows 控制台用 UTF-8 输出
-#[cfg(windows)]
-fn setup_console_utf8() {
-    // SAFETY: 只调用标准 Win32 API，无其他副作用
-    unsafe {
-        windows_sys::Win32::System::Console::SetConsoleOutputCP(65001);
-    }
-}
+use windowshit_netinfo::{AdapterData, AdapterKind};
 
 #[derive(Debug)]
 struct Adapter {
@@ -25,20 +17,23 @@ struct Adapter {
     description: String,
 }
 
-/// 数据采集：Windows / unix 各自填字段（数据来源不同，无共享逻辑可抽）。
-#[cfg(windows)]
+/// 数据采集：统一走公共数据层。
 fn collect() -> Vec<Adapter> {
     let mut out = Vec::new();
-    if let Ok(adapters) = ipconfig::get_adapters() {
+    if let Ok(adapters) = windowshit_netinfo::get_adapters() {
         for a in adapters {
             // 原版 getmac 不显示回环与隧道（Teredo 等）适配器
-            let kind = a.if_type();
-            if kind == ipconfig::IfType::SoftwareLoopback || kind == ipconfig::IfType::Tunnel {
+            if a.kind == AdapterKind::Loopback || a.kind == AdapterKind::Tunnel {
                 continue;
             }
-            let friendly = a.friendly_name().to_string();
-            let mac = a
-                .physical_address()
+            let AdapterData {
+                friendly_name,
+                mac,
+                is_up,
+                description,
+                ..
+            } = a;
+            let mac = mac
                 .map(|v| {
                     v.iter()
                         .map(|b| format!("{b:02X}"))
@@ -50,11 +45,11 @@ fn collect() -> Vec<Adapter> {
             if mac.is_empty() {
                 continue;
             }
-            let connected = a.oper_status() == ipconfig::OperStatus::IfOperStatusUp;
-            let transport = if connected {
-                match find_guid(&friendly) {
+            let transport = if is_up {
+                match find_guid(&friendly_name) {
                     Some(guid) => format!("\\Device\\Tcpip_{guid}"), // guid 已含花括号
-                    None => String::new(),
+                    // unix 无注册表，fallback 到接口名；Windows 兜底
+                    None => friendly_name.clone(),
                 }
             } else {
                 "Media disconnected".to_string()
@@ -62,113 +57,29 @@ fn collect() -> Vec<Adapter> {
             out.push(Adapter {
                 mac,
                 transport,
-                friendly,
-                description: a.description().to_string(),
+                friendly: friendly_name,
+                description,
             });
         }
     }
     out
 }
 
-#[cfg(not(windows))]
-fn collect() -> Vec<Adapter> {
-    let mut out = Vec::new();
-    for i in netdev::get_interfaces() {
-        if i.name.starts_with("lo") {
-            continue;
-        }
-        let mac = i.mac_addr.map(|m| m.to_string().to_uppercase()).unwrap_or_default();
-        out.push(Adapter {
-            mac,
-            transport: i.name.clone(),
-            friendly: i.name.clone(),
-            description: String::new(),
-        });
-    }
-    out
-}
-
 /// 通过注册表反查适配器的 interface GUID。
 /// 键: HKLM\SYSTEM\CurrentControlSet\Control\Network\{4D36E972-E325-11CE-BFC1-08002BE10318}\<GUID>\Connection
-/// 其 Name 值为友好名称。
-#[cfg(windows)]
+/// 其 Name 值为友好名称。非 Windows 平台为空实现，直接返回 None。
 fn find_guid(friendly: &str) -> Option<String> {
-    use windows_sys::Win32::System::Registry::{
-        RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_LOCAL_MACHINE,
-        KEY_READ,
-    };
-
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(std::iter::once(0)).collect()
-    }
-
-    // SAFETY: 标准注册表 API，缓冲区类型与大小正确
-    unsafe {
-        let net_root =
-            wide("SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}");
-        let mut root_key: HKEY = 0;
-        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, net_root.as_ptr(), 0, KEY_READ, &mut root_key) != 0 {
-            return None;
-        }
-
-        let mut index: u32 = 0;
-        let mut guid_buf = [0u16; 39];
-        loop {
-            let mut name_len: u32 = guid_buf.len() as u32;
-            let ret = RegEnumKeyExW(
-                root_key,
-                index,
-                guid_buf.as_mut_ptr(),
-                &mut name_len,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            );
-            if ret != 0 {
-                break;
+    const NET_ROOT: &str =
+        "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}";
+    for guid in windowshit_winreg::reg_enum_child_names(NET_ROOT) {
+        let conn = format!("{NET_ROOT}\\{guid}\\Connection");
+        if let Some(name) = windowshit_winreg::reg_query_string(&conn, "Name") {
+            if name.eq_ignore_ascii_case(friendly) {
+                return Some(guid);
             }
-            let guid = String::from_utf16_lossy(&guid_buf[..name_len as usize]);
-
-            let conn_path = format!(
-                "SYSTEM\\CurrentControlSet\\Control\\Network\\{{4D36E972-E325-11CE-BFC1-08002BE10318}}\\{guid}\\Connection"
-            );
-            let conn_wide = wide(&conn_path);
-            let mut conn_key: HKEY = 0;
-            if RegOpenKeyExW(HKEY_LOCAL_MACHINE, conn_wide.as_ptr(), 0, KEY_READ, &mut conn_key) == 0 {
-                let mut buf = [0u8; 2048];
-                let mut len: u32 = buf.len() as u32;
-                let name_wide = wide("Name");
-                let qret = RegQueryValueExW(
-                    conn_key,
-                    name_wide.as_ptr(),
-                    std::ptr::null(),
-                    std::ptr::null_mut(),
-                    buf.as_mut_ptr(),
-                    &mut len,
-                );
-                RegCloseKey(conn_key);
-                if qret == 0 && len >= 2 {
-                    // REG_SZ 是 UTF-16LE
-                    let count = (len as usize) / 2;
-                    let mut u16s = Vec::with_capacity(count);
-                    for i in 0..count {
-                        u16s.push(u16::from_le_bytes([buf[i * 2], buf[i * 2 + 1]]));
-                    }
-                    let text = String::from_utf16_lossy(&u16s)
-                        .trim_end_matches('\0')
-                        .to_string();
-                    if text.eq_ignore_ascii_case(friendly) {
-                        RegCloseKey(root_key);
-                        return Some(guid);
-                    }
-                }
-            }
-            index += 1;
         }
-        RegCloseKey(root_key);
-        None
     }
+    None
 }
 
 fn main() -> ExitCode {
@@ -182,8 +93,7 @@ fn main() -> ExitCode {
         include_str!("../locales/help.en.txt"),
     );
 
-    #[cfg(windows)]
-    setup_console_utf8();
+    L10n::setup_console_utf8();
 
     let raw: Vec<String> = std::env::args().skip(1).collect();
 

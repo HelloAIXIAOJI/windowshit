@@ -16,4 +16,4 @@ dns-lookup = "2"
 windowshit-i18n = { path = "../i18n" }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation", "Win32_Networking_WinSock"] }
+windows-sys = { version = "0.52", features = ["Win32_Networking_WinSock"] }
