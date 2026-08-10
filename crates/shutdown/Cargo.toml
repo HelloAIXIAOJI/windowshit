@@ -1,0 +1,16 @@
+[package]
+name = "shutdown"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust 重写的 Windows shutdown.exe（跨平台整活）"
+
+[[bin]]
+name = "shutdown"
+path = "src/main.rs"
+
+[dependencies]
+windowshit-args = { path = "../args" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Shutdown", "Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }

@@ -33,7 +33,7 @@
 | tasklist | 列出当前运行进程 | 是 |
 | taskkill | 按 PID / 映像名结束进程 | 是 |
 | reg | 注册表命令行操作 | 否 |
-| shutdown | 关机 / 重启 / 注销 | 否 |
+| shutdown | 关机 / 重启 / 注销 | 是 |
 | whoami | 显示当前用户信息 | 是 |
 | hostname | 显示计算机名 | 是 |
 | ver | 显示系统版本 | 是 |
