@@ -49,22 +49,31 @@ fn main() -> ExitCode {
         let a = &raw[i];
         if a.starts_with('/') || a.starts_with('-') {
             let up = a[1..].to_ascii_uppercase();
-            if up.starts_with('R') {
+            if up == "R" {
+                // 精确 /R：反向
                 reverse = true;
             } else if let Some(n) = up.strip_prefix('+') {
-                key_start = n.parse().unwrap_or(0);
-            } else if up.starts_with("O") {
-                // /O file 或 /O:file
-                if let Some(rest) = a[1..].strip_prefix("O:") {
-                    output_file = Some(rest.to_string());
+                // /+n：从第 n 个字符开始比较
+                if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) {
+                    key_start = n.parse().unwrap_or(0);
                 } else {
-                    i += 1;
-                    if i < raw.len() {
-                        output_file = Some(raw[i].clone());
-                    }
+                    input_file = Some(a.clone());
                 }
-            } else {
+            } else if up == "O" {
+                // /O file
+                i += 1;
+                if i < raw.len() {
+                    output_file = Some(raw[i].clone());
+                }
+            } else if let Some(rest) = up.strip_prefix("O:") {
+                // /O:file
+                output_file = Some(rest.to_string());
+            } else if matches!(up.as_str(), "M" | "L" | "REC" | "T") {
                 // /M /L /REC /T：忽略（内存/区域/记录长度/临时目录不影响结果）
+                // 只认精确开关，避免 Linux 绝对路径被误判
+            } else {
+                // 未知 /xxx：按路径处理（Linux 绝对路径以 / 开头）
+                input_file = Some(a.clone());
             }
         } else {
             input_file = Some(a.clone());
