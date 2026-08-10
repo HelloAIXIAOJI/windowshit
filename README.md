@@ -25,6 +25,8 @@
 | sort | 对输入行排序 | 是 |
 | where | 查找匹配文件的位置 | 是 |
 | icacls | 修改文件 / 目录 ACL 权限 | 否 |
+| expand | 解压 CAB 压缩包 | 否 |
+| makecab | 制作 CAB 压缩包 | 否 |
 | replace | 替换目标目录中的文件 | 是 |
 | xcopy | 复制文件和目录树 | 否 |
 | robocopy | 高级文件复制（多线程、镜像、重试） | 否 |
