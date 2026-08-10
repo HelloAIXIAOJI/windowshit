@@ -1,0 +1,14 @@
+[package]
+name = "makecab"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust 重写的 Windows makecab.exe（跨平台整活）"
+
+[[bin]]
+name = "makecab"
+path = "src/main.rs"
+
+[dependencies]
+windowshit-args = { path = "../args" }
+cab = "0.6"
