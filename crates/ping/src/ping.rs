@@ -129,6 +129,8 @@ pub fn apply_socket_options(
 }
 
 /// Windows 上用 WinSock 设置 IP_DONTFRAGMENT（即 ping 的 -f 不分片标志）。
+///
+/// socket2 0.6 已移除 set_dont_fragment API，无现成 crate 提供，必须自实现。
 #[cfg(windows)]
 fn set_dont_fragment(sock: &socket2::Socket) -> io::Result<()> {
     use std::os::windows::io::AsRawSocket;

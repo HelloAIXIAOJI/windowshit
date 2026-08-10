@@ -15,4 +15,4 @@ windowshit-i18n = { path = "../i18n" }
 sysinfo = "0.39"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_RemoteDesktop"] }
+windows-sys = { version = "0.52", features = ["Win32_System_RemoteDesktop"] }

@@ -1,8 +1,10 @@
 //! tasklist —— 显示进程列表（复刻 Windows tasklist.exe）。
 //!
 //! 进程数据复用 `sysinfo` crate（跨平台）。
-//! 会话名/会话号是 Windows 概念，Windows 上用 ProcessIdToSessionId；
-//! 其它平台显示 N/A。
+//! 会话号是 Windows 概念：sysinfo 的 session_id() 在 Windows 上内部走
+//! ProcessIdToSessionId（跨会话/受保护进程返回 ACCESS_DENIED），
+//! Linux 上是 getsid()（POSIX 会话 ID，语义不同），两者都不能用，
+//! 故 Windows 用 WTSEnumerateProcessesW（原版同机制），其它平台 N/A。
 
 use std::collections::HashMap;
 use std::process::ExitCode;
