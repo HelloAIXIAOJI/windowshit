@@ -381,6 +381,9 @@ checksum = "caf1079563223d5d59d83c85886a56e586cfd5c1a26292e971a0fa266531ac5a"
 [[package]]
 name = "fc"
 version = "0.1.0"
+dependencies = [
+ "windowshit-args",
+]
 
 [[package]]
 name = "fdeflate"
@@ -1583,6 +1586,14 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "replace"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.52.0",
+ "windowshit-args",
+]
 
 [[package]]
 name = "rustc-hash"

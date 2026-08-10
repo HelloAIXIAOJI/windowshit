@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/ping", "crates/ipconfig", "crates/tracert", "crates/pathping", "crates/whoami", "crates/hostname", "crates/ver", "crates/where", "crates/tree", "crates/findstr", "crates/getmac", "crates/type", "crates/sort", "crates/more", "crates/clip", "crates/tasklist", "crates/taskkill", "crates/systeminfo", "crates/fc", "crates/choice", "crates/i18n", "crates/trace-core", "crates/args", "crates/netinfo", "crates/winreg"]
+members = ["crates/ping", "crates/ipconfig", "crates/tracert", "crates/pathping", "crates/whoami", "crates/hostname", "crates/ver", "crates/where", "crates/tree", "crates/findstr", "crates/getmac", "crates/type", "crates/sort", "crates/more", "crates/clip", "crates/tasklist", "crates/taskkill", "crates/systeminfo", "crates/fc", "crates/choice", "crates/replace", "crates/i18n", "crates/trace-core", "crates/args", "crates/netinfo", "crates/winreg"]
 
 [workspace.package]
 version = "0.1.0"

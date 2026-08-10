@@ -10,3 +10,4 @@ name = "fc"
 path = "src/main.rs"
 
 [dependencies]
+windowshit-args = { path = "../args" }

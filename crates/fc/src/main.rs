@@ -12,6 +12,8 @@ use std::env;
 use std::fs;
 use std::process::ExitCode;
 
+use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
+
 const HELP: &str = "fc [/a] [/c] [/l] [/n] [/t] [/u] [/w] [/b] [options] file1 file2
 
 Compares two files or sets of files and displays the differences between them.
@@ -226,40 +228,33 @@ fn main() -> ExitCode {
         eprintln!("FC: Insufficient number of file specifications");
         return ExitCode::from(255);
     }
-
-    let mut abbreviate = false;
-    let mut binary = false;
-    let mut ignore_case = false;
-    let mut line_num = false;
-    let mut unicode = false;
-    let mut compress_ws = false;
-    let mut files: Vec<&str> = Vec::new();
-
-    for a in &raw {
-        if a.starts_with('/') || a.starts_with('-') {
-            match a[1..].to_ascii_uppercase().as_str() {
-                "A" => abbreviate = true,
-                "B" => binary = true,
-                "C" => ignore_case = true,
-                "L" | "N" => {
-                    line_num = true;
-                }
-                "T" => {} // tab 不展开：默认行为差异可忽略
-                "U" => unicode = true,
-                "W" => compress_ws = true,
-                "?" => {
-                    println!("{HELP}");
-                    return ExitCode::SUCCESS;
-                }
-                _ => {
-                    eprintln!("FC: Invalid switch -{}.", a[1..].to_ascii_uppercase());
-                    return ExitCode::from(2);
-                }
-            }
-        } else {
-            files.push(a);
-        }
+    if raw.iter().any(|a| a == "/?" || a == "-?") {
+        println!("{HELP}");
+        return ExitCode::SUCCESS;
     }
+
+    // 精确开关表；未知 /xxx 一律按路径处理（Linux 绝对路径以 / 开头）
+    const FLAGS: &[Flag] = &[
+        Flag::new("A", Kind::Flag),
+        Flag::new("B", Kind::Flag),
+        Flag::new("C", Kind::Flag),
+        Flag::new("L", Kind::Ignore), // /L 强制 ASCII（默认行为），无需处理
+        Flag::new("N", Kind::Flag),
+        Flag::new("T", Kind::Ignore), // /T 不展开 tab（默认行为）
+        Flag::new("U", Kind::Flag),
+        Flag::new("W", Kind::Flag),
+    ];
+    let parsed = match parse(&raw, FLAGS, Unknown::Path) {
+        Ok(p) => p,
+        Err(_) => Parsed::default(),
+    };
+    let abbreviate = parsed.flags.contains_key("A");
+    let binary = parsed.flags.contains_key("B");
+    let ignore_case = parsed.flags.contains_key("C");
+    let line_num = parsed.flags.contains_key("N");
+    let unicode = parsed.flags.contains_key("U");
+    let compress_ws = parsed.flags.contains_key("W");
+    let files: Vec<&str> = parsed.paths;
 
     if files.len() < 2 {
         eprintln!("FC: Insufficient number of file specifications");
