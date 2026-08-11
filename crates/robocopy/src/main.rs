@@ -194,6 +194,23 @@ fn preextract_multi(raw: &[String]) -> (Vec<String>, Vec<String>, Vec<String>) {
     (xf, xd, rest)
 }
 
+/// 抽出 Linux 绝对路径（`/tmp/...`）：以 `/` 开头且剥掉前缀后仍含 `/` 的参数
+/// 会被 `Unknown::Ignore` 当未知开关静默丢弃。这里先按原顺序抽出，
+/// 解析后再合并回位置参数。开关名不含 `/`，因此不会误伤任何开关。
+fn extract_abs_paths(raw: &[String]) -> (Vec<Option<String>>, Vec<String>) {
+    let mut slots: Vec<Option<String>> = Vec::new();
+    let mut rest: Vec<String> = Vec::new();
+    for a in raw {
+        if a.starts_with('/') && a[1..].contains('/') {
+            slots.push(Some(a.clone()));
+        } else {
+            rest.push(a.clone());
+            slots.push(None);
+        }
+    }
+    (slots, rest)
+}
+
 /// 源目录不可访问错误行（对齐原版）。
 fn access_error(src: &std::path::Path) -> (String, String) {
     let msg = format!(
@@ -241,11 +258,31 @@ fn main() -> ExitCode {
     // 预提取 /XF /XD 多值
     let (xf, xd, rest) = preextract_multi(&raw);
 
+    // 抽出 Linux 绝对路径（/tmp/...），否则会被 Unknown::Ignore 当未知开关静默丢弃
+    let (path_slots, rest) = extract_abs_paths(&rest);
+
     // robocopy 对未知开关静默忽略
     let parsed = match parse(&rest, FLAGS, Unknown::Ignore) {
         Ok(p) => p,
         Err(_) => Parsed::default(),
     };
+
+    // 按原顺序合并位置参数：抽出的绝对路径 + parse 收集的普通参数
+    let mut paths: Vec<String> = Vec::new();
+    {
+        let mut parsed_paths = parsed.paths.iter();
+        for slot in path_slots {
+            match slot {
+                Some(p) => paths.push(p),
+                None => {
+                    if let Some(p) = parsed_paths.next() {
+                        paths.push(p.to_string());
+                    }
+                }
+            }
+        }
+        paths.extend(parsed_paths.map(|s| s.to_string()));
+    }
 
     let mut opts = build_opts(&parsed, mt, xf, xd);
 
@@ -261,7 +298,7 @@ fn main() -> ExitCode {
     }
 
     // 位置参数：source destination [file...]
-    let mut paths = parsed.paths.iter();
+    let mut paths = paths.iter();
     let src_raw = paths.next();
     let dst_raw = paths.next();
     let files: Vec<String> = paths.map(|s| s.to_string()).collect();
