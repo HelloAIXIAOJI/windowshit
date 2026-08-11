@@ -56,8 +56,7 @@ fn inf_blank() -> String {
 
 /// ctime 风格的日期字符串（本地时间），如 `Tue Aug 11 05:24:25 2026`。
 fn ctime_now() -> String {
-    let now = time::OffsetDateTime::now_local()
-        .unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+    let now = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
     const WD: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const MO: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -75,7 +74,11 @@ fn ctime_now() -> String {
 }
 
 fn join_path(dir: &str, name: &str) -> String {
-    let d = if dir.is_empty() || dir == "." { "" } else { dir };
+    let d = if dir.is_empty() || dir == "." {
+        ""
+    } else {
+        dir
+    };
     if d.is_empty() {
         name.to_string()
     } else {
@@ -163,7 +166,7 @@ fn check_max_disk_size(d: &Directives) -> Result<u64, String> {
             ));
         }
     };
-    if n % 512 != 0 {
+    if !n.is_multiple_of(512) {
         return Err(format!(
             "ERROR: MaxDiskSize({v}) is not a multiple of ClusterSize(512)"
         ));
@@ -210,9 +213,7 @@ fn write_setup_inf(files: &[String], sizes: &[u64], cab_name: &str) -> Result<()
     s.push_str("\r\n");
     s.push_str(&blank);
     s.push_str("\r\n");
-    s.push_str(&inf_mid(&format!(
-        " Automatically generated on: {date}"
-    )));
+    s.push_str(&inf_mid(&format!(" Automatically generated on: {date}")));
     s.push_str("\r\n");
     s.push_str(&blank);
     s.push_str("\r\n");
@@ -258,7 +259,7 @@ fn build_cab(
     let mut builder = cab::CabinetBuilder::new();
     let folder = builder.add_folder(compression);
     for f in files {
-        folder.add_file(&basename(f));
+        folder.add_file(basename(f));
     }
     let tmp = format!("{dest}.~tmp");
     {
@@ -460,7 +461,10 @@ fn split_pattern(p: &str) -> (String, String) {
     match (path.parent(), path.file_name()) {
         (Some(d), Some(f)) if !f.is_empty() => {
             let dir = d.to_string_lossy().to_string();
-            (if dir.is_empty() { ".".to_string() } else { dir }, f.to_string_lossy().to_string())
+            (
+                if dir.is_empty() { ".".to_string() } else { dir },
+                f.to_string_lossy().to_string(),
+            )
         }
         _ => (String::from("."), p.to_string()),
     }
@@ -534,22 +538,17 @@ fn main() -> ExitCode {
     let _ = verbosity;
 
     // 解析 /L /F
-    const FLAGS: &[Flag] = &[
-        Flag::new("L", Kind::Value),
-        Flag::new("F", Kind::Value),
-    ];
-    let parsed: Parsed = match parse(&clean, FLAGS, Unknown::Path) {
-        Ok(p) => p,
-        Err(_) => Parsed::default(),
-    };
+    const FLAGS: &[Flag] = &[Flag::new("L", Kind::Value), Flag::new("F", Kind::Value)];
+    let parsed: Parsed = parse(&clean, FLAGS, Unknown::Path).unwrap_or_default();
 
-    let directives = match parse_directives(&d_values.iter().map(|s| s.as_str()).collect::<Vec<_>>()) {
-        Ok(d) => d,
-        Err(e) => {
-            println!("{e}");
-            return ExitCode::from(1);
-        }
-    };
+    let directives =
+        match parse_directives(&d_values.iter().map(|s| s.as_str()).collect::<Vec<_>>()) {
+            Ok(d) => d,
+            Err(e) => {
+                println!("{e}");
+                return ExitCode::from(1);
+            }
+        };
     let l_dir = parsed.flags.get("L").and_then(|v| *v);
 
     if let Some(list_file) = parsed.flags.get("F").and_then(|v| *v) {

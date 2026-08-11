@@ -16,7 +16,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
+use windowshit_args::{parse, Flag, Kind, Unknown};
 
 const HELP: &str = "Replaces files.
 
@@ -62,7 +62,10 @@ fn wild_match(pattern: &str, name: &str) -> bool {
         }
         false
     }
-    bytes(&pattern.to_lowercase().into_bytes(), &name.to_lowercase().into_bytes())
+    bytes(
+        &pattern.to_lowercase().into_bytes(),
+        &name.to_lowercase().into_bytes(),
+    )
 }
 
 /// 源路径最后一段是模式 → 枚举目录；否则返回单文件（不存在也返回，保持原版静默）。
@@ -103,9 +106,10 @@ fn collect_targets(dir: &Path, base_name: &str, recursive: bool) -> Vec<PathBuf>
             if recursive {
                 out.extend(collect_targets(&path, base_name, true));
             }
-        } else if path.file_name().is_some_and(|n| {
-            n.to_string_lossy().eq_ignore_ascii_case(base_name)
-        }) {
+        } else if path
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(base_name))
+        {
             out.push(path);
         }
     }
@@ -134,10 +138,7 @@ fn main() -> ExitCode {
         Flag::new("U", Kind::Flag),
         Flag::new("W", Kind::Flag),
     ];
-    let parsed = match parse(&raw, FLAGS, Unknown::Path) {
-        Ok(p) => p,
-        Err(_) => Parsed::default(),
-    };
+    let parsed = parse(&raw, FLAGS, Unknown::Path).unwrap_or_default();
     let add = parsed.flags.contains_key("A"); // /A 添加
     let prompt = parsed.flags.contains_key("P"); // /P 确认
     let read_only = parsed.flags.contains_key("R"); // /R 替换只读
@@ -154,7 +155,10 @@ fn main() -> ExitCode {
     // 开关组合限制（help 明确：/A 不能与 /S /U 同用）
     if add && (recursive || older_only) {
         println!("No files replaced");
-        eprintln!("{}", red("Invalid syntax. /A cannot be used with /S or /U."));
+        eprintln!(
+            "{}",
+            red("Invalid syntax. /A cannot be used with /S or /U.")
+        );
         return ExitCode::from(11);
     }
 
@@ -210,7 +214,10 @@ fn main() -> ExitCode {
 
     if !target_dir.is_dir() {
         println!("No files replaced");
-        eprintln!("{}", red(&format!("Path not found - {}", target_dir.display())));
+        eprintln!(
+            "{}",
+            red(&format!("Path not found - {}", target_dir.display()))
+        );
         return ExitCode::from(2);
     }
 

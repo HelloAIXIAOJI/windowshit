@@ -217,24 +217,20 @@ fn main() -> ExitCode {
 fn read_until_valid(o: &Opts, is_tty: bool) -> Option<usize> {
     loop {
         let ch = if is_tty { read_key() } else { read_byte() };
-        match ch {
-            Some(c) => {
-                if let Some(idx) = o
-                    .choices
-                    .iter()
-                    .position(|x| char_eq(*x, c, o.case_sensitive))
-                {
-                    return Some(idx);
-                }
-                // 无效按键：蜂鸣并继续（原版会重新等待）
-                print!("\x07");
-                let _ = io::stdout().flush();
-                if !is_tty {
-                    // 管道/EOF：无法再等，放弃
-                    return None;
-                }
-            }
-            None => return None, // Ctrl+C / EOF / 读取失败
+        let c = ch?; // Ctrl+C / EOF / 读取失败
+        if let Some(idx) = o
+            .choices
+            .iter()
+            .position(|x| char_eq(*x, c, o.case_sensitive))
+        {
+            return Some(idx);
+        }
+        // 无效按键：蜂鸣并继续（原版会重新等待）
+        print!("\x07");
+        let _ = io::stdout().flush();
+        if !is_tty {
+            // 管道/EOF：无法再等，放弃
+            return None;
         }
     }
 }

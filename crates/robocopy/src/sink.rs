@@ -21,14 +21,16 @@ struct State {
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
 
 fn state() -> &'static Mutex<State> {
-    STATE.get_or_init(|| Mutex::new(State {
-        log: None,
-        tee: false,
-        console_quiet: false,
-        unicode_log: false,
-        unicode_out: false,
-        stdout_started: false,
-    }))
+    STATE.get_or_init(|| {
+        Mutex::new(State {
+            log: None,
+            tee: false,
+            console_quiet: false,
+            unicode_log: false,
+            unicode_out: false,
+            stdout_started: false,
+        })
+    })
 }
 
 /// 字符串 → UTF-16LE 字节。

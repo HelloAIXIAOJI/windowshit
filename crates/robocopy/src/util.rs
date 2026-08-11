@@ -66,7 +66,9 @@ pub fn absolutize(p: &str) -> PathBuf {
 
 /// 空目录判断。
 pub fn is_dir_empty(p: &Path) -> bool {
-    fs::read_dir(p).map(|mut it| it.next().is_none()).unwrap_or(false)
+    fs::read_dir(p)
+        .map(|mut it| it.next().is_none())
+        .unwrap_or(false)
 }
 
 /// 递归删除目录（先删内容再删自身，尽力而为）。
@@ -95,7 +97,7 @@ pub fn thousands(n: u64) -> String {
     let s = n.to_string();
     let mut out = String::new();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);

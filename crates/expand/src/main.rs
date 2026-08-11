@@ -71,7 +71,10 @@ fn split_pattern(p: &str) -> (String, String) {
     match (path.parent(), path.file_name()) {
         (Some(d), Some(f)) if !f.is_empty() => {
             let dir = d.to_string_lossy().to_string();
-            (if dir.is_empty() { ".".to_string() } else { dir }, f.to_string_lossy().to_string())
+            (
+                if dir.is_empty() { ".".to_string() } else { dir },
+                f.to_string_lossy().to_string(),
+            )
         }
         _ => (String::from("."), p.to_string()),
     }
@@ -265,7 +268,7 @@ fn do_expand(paths: &[&str], rename: bool, filt: Option<&str>) -> ExitCode {
             }
             let selected: Vec<&(String, u32)> = entries
                 .iter()
-                .filter(|(n, _)| filt.map_or(true, |f| glob_match(n, f)))
+                .filter(|(n, _)| filt.is_none_or(|f| glob_match(n, f)))
                 .collect();
             if selected.is_empty() {
                 // 原版对 -F 无匹配仍输出 Adding dest + 队列流程
@@ -459,7 +462,7 @@ fn do_list(paths: &[&str], filt: Option<&str>) -> ExitCode {
                     Ok(entries) => {
                         let n: Vec<_> = entries
                             .iter()
-                            .filter(|(name, _)| filt.map_or(true, |f| glob_match(name, f)))
+                            .filter(|(name, _)| filt.is_none_or(|f| glob_match(name, f)))
                             .collect();
                         for (name, _) in &n {
                             println!("{src}: {name}");
@@ -473,7 +476,7 @@ fn do_list(paths: &[&str], filt: Option<&str>) -> ExitCode {
                 },
                 FileKind::Szdd(orig, _) => {
                     let iname = internal_name(src, orig);
-                    if filt.map_or(true, |f| glob_match(&iname, f)) {
+                    if filt.is_none_or(|f| glob_match(&iname, f)) {
                         println!("{src}: {iname}");
                         total += 1;
                     }
@@ -525,10 +528,7 @@ fn main() -> ExitCode {
         Flag::new("D", Kind::Flag),
         Flag::new("F", Kind::Value),
     ];
-    let parsed: Parsed = match parse(&raw, FLAGS, Unknown::Path) {
-        Ok(p) => p,
-        Err(_) => Parsed::default(),
-    };
+    let parsed: Parsed = parse(&raw, FLAGS, Unknown::Path).unwrap_or_default();
     let rename = parsed.flags.contains_key("R") || parsed.flags.contains_key("I");
     let list = parsed.flags.contains_key("D");
     let filt = parsed.flags.get("F").and_then(|v| *v);
@@ -589,8 +589,7 @@ mod tests {
                     // match：不设 flag 位
                     // b0 = matchpos 低 8 位；b1 高 4 位 = matchpos 高 4 位，低 4 位 = len-3
                     let b0 = (best_pos & 0xFF) as u8;
-                    let b1 =
-                        ((((best_pos >> 8) & 0x0F) << 4) | ((best_len - 3) & 0x0F)) as u8;
+                    let b1 = ((((best_pos >> 8) & 0x0F) << 4) | ((best_len - 3) & 0x0F)) as u8;
                     tokens.push(b0);
                     tokens.push(b1);
                     for k in 0..best_len {
@@ -631,7 +630,7 @@ mod tests {
     fn szdd_with_matches() {
         roundtrip(b"ABCABCABCABCABCABCABCABC");
         roundtrip(b"Hello Hello Hello Hello World!");
-        roundtrip(&vec![b'x'; 64]);
+        roundtrip(&[b'x'; 64]);
     }
 
     #[test]

@@ -41,7 +41,11 @@ pub fn reg_query_string(key_path: &str, name: &str) -> Option<String> {
         for i in 0..count {
             u16s.push(u16::from_le_bytes([buf[i * 2], buf[i * 2 + 1]]));
         }
-        Some(String::from_utf16_lossy(&u16s).trim_end_matches('\0').to_string())
+        Some(
+            String::from_utf16_lossy(&u16s)
+                .trim_end_matches('\0')
+                .to_string(),
+        )
     }
 }
 

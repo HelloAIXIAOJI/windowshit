@@ -36,7 +36,7 @@ impl L10n {
                 936 | 950 => "zh-CN",
                 _ => "en-US",
             };
-            return Self::for_lang(lang);
+            Self::for_lang(lang)
         }
         #[cfg(not(windows))]
         {

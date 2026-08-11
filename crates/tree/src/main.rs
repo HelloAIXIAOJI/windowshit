@@ -34,7 +34,11 @@ fn volume_serial(_path: &str) -> Option<String> {
             0,
         );
         if ret != 0 {
-            Some(format!("{:04X}-{:04X}", (serial >> 16) & 0xFFFF, serial & 0xFFFF))
+            Some(format!(
+                "{:04X}-{:04X}",
+                (serial >> 16) & 0xFFFF,
+                serial & 0xFFFF
+            ))
         } else {
             None
         }
@@ -67,10 +71,7 @@ fn main() -> ExitCode {
     }
 
     // 只认精确开关；Linux 绝对路径以 / 开头，未知一律按路径
-    const FLAGS: &[Flag] = &[
-        Flag::new("F", Kind::Flag),
-        Flag::new("A", Kind::Flag),
-    ];
+    const FLAGS: &[Flag] = &[Flag::new("F", Kind::Flag), Flag::new("A", Kind::Flag)];
     let parsed = match parse(&raw, FLAGS, Unknown::Path) {
         Ok(p) => p,
         Err(_) => Parsed {
@@ -80,7 +81,7 @@ fn main() -> ExitCode {
     };
     let show_files = parsed.flags.contains_key("F");
     let ascii = parsed.flags.contains_key("A");
-    let target: Option<PathBuf> = parsed.paths.last().map(|s| PathBuf::from(s));
+    let target: Option<PathBuf> = parsed.paths.last().map(PathBuf::from);
 
     let root = match target {
         Some(t) => t,
@@ -134,7 +135,11 @@ fn main() -> ExitCode {
     for (idx, (item, is_dir)) in items.iter().enumerate() {
         let last = idx == items.len() - 1;
         let conn = if ascii {
-            if last { "`-- " } else { "|-- " }
+            if last {
+                "`-- "
+            } else {
+                "|-- "
+            }
         } else if last {
             "└── "
         } else {
@@ -144,7 +149,11 @@ fn main() -> ExitCode {
         println!("{conn}{name}");
         if *is_dir {
             let child_prefix = if ascii {
-                if last { "    " } else { "|   " }
+                if last {
+                    "    "
+                } else {
+                    "|   "
+                }
             } else if last {
                 "    "
             } else {
@@ -157,6 +166,7 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[allow(clippy::only_used_in_recursion)]
 fn print_dir(dir: &Path, prefix: &str, show_files: bool, ascii: bool, i18n: &L10n) {
     let mut dirs: Vec<PathBuf> = Vec::new();
     let mut files: Vec<PathBuf> = Vec::new();
@@ -185,7 +195,11 @@ fn print_dir(dir: &Path, prefix: &str, show_files: bool, ascii: bool, i18n: &L10
     for (idx, (item, is_dir)) in items.iter().enumerate() {
         let last = idx == items.len() - 1;
         let conn = if ascii {
-            if last { "`-- " } else { "|-- " }
+            if last {
+                "`-- "
+            } else {
+                "|-- "
+            }
         } else if last {
             "└── "
         } else {
@@ -195,13 +209,23 @@ fn print_dir(dir: &Path, prefix: &str, show_files: bool, ascii: bool, i18n: &L10
         println!("{prefix}{conn}{name}");
         if *is_dir {
             let child_prefix = if ascii {
-                if last { "    " } else { "|   " }
+                if last {
+                    "    "
+                } else {
+                    "|   "
+                }
             } else if last {
                 "    "
             } else {
                 "│   "
             };
-            print_dir(item, &format!("{prefix}{child_prefix}"), show_files, ascii, i18n);
+            print_dir(
+                item,
+                &format!("{prefix}{child_prefix}"),
+                show_files,
+                ascii,
+                i18n,
+            );
         }
     }
 }

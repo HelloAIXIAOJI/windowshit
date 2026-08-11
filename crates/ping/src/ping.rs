@@ -44,9 +44,7 @@ pub async fn resolve(host: &str, want_v4: bool, want_v6: bool) -> Result<IpAddr,
         };
     }
 
-    let addrs = lookup_host((host, 0))
-        .await
-        .map_err(|e| e.to_string())?;
+    let addrs = lookup_host((host, 0)).await.map_err(|e| e.to_string())?;
     for a in addrs {
         if want_v4 && a.is_ipv4() {
             return Ok(a.ip());
@@ -134,7 +132,9 @@ pub fn apply_socket_options(
 #[cfg(windows)]
 fn set_dont_fragment(sock: &socket2::Socket) -> io::Result<()> {
     use std::os::windows::io::AsRawSocket;
-    use windows_sys::Win32::Networking::WinSock::{setsockopt, IPPROTO_IP, IP_DONTFRAGMENT, SOCKET};
+    use windows_sys::Win32::Networking::WinSock::{
+        setsockopt, IPPROTO_IP, IP_DONTFRAGMENT, SOCKET,
+    };
 
     // SAFETY: 句柄来自存活的 AsyncSocket，参数类型与长度均正确。
     unsafe {

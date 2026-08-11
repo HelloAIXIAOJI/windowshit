@@ -2,7 +2,6 @@
 /// Windows 上还原原版 ver 的 `Microsoft Windows [Version x]` 格式
 /// （原版任何语言版本都是英文文本，故不随代码页翻译）。
 /// 跨平台用 `os_info` crate，无平台分支。
-
 use os_info::Type;
 use windowshit_i18n::L10n;
 

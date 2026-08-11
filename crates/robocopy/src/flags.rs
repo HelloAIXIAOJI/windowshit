@@ -170,43 +170,43 @@ pub struct Options {
     pub mt: Option<usize>,      // /MT[:n]（阶段 1 仅回显，未做多线程）
     pub files: Vec<String>,     // 文件模式（默认匹配所有）
     // 输出控制
-    pub no_progress: bool,   // /NP
-    pub no_file_list: bool,  // /NFL
-    pub no_dir_list: bool,   // /NDL
-    pub no_size: bool,       // /NS
-    pub no_class: bool,      // /NC
-    pub no_job_header: bool, // /NJH
-    pub no_job_summary: bool, // /NJS
+    pub no_progress: bool,     // /NP
+    pub no_file_list: bool,    // /NFL
+    pub no_dir_list: bool,     // /NDL
+    pub no_size: bool,         // /NS
+    pub no_class: bool,        // /NC
+    pub no_job_header: bool,   // /NJH
+    pub no_job_summary: bool,  // /NJS
     pub include_same: bool,    // /IS：Same 文件也复制
     pub include_tweaked: bool, // /IT：Tweaked 文件也复制
     // 阶段 2：文件选择与过滤
-    pub xf: Vec<String>,       // /XF：排除文件（通配符）
-    pub xd: Vec<String>,       // /XD：排除目录
-    pub exclude_changed: bool, // /XC
-    pub exclude_newer: bool,   // /XN
-    pub exclude_older: bool,   // /XO
-    pub exclude_lonely: bool,  // /XL：排除源有目标无
-    pub exclude_extra: bool,   // /XX：排除目标多余
-    pub max_size: Option<u64>, // /MAX:n
-    pub min_size: Option<u64>, // /MIN:n
-    pub max_age: Option<u64>,  // /MAXAGE:n（天）
-    pub min_age: Option<u64>,  // /MINAGE:n（天）
-    pub max_lad: Option<u64>,  // /MAXLAD:n（天）
-    pub min_lad: Option<u64>,  // /MINLAD:n（天）
-    pub archive: bool,          // /A：只复制归档位文件
-    pub archive_move: bool,     // /M：复制并清除归档位
-    pub include_attrs: Vec<char>, // /IA:...
-    pub exclude_attrs: Vec<char>, // /XA:...
-    pub lev: Option<u32>,         // /LEV:n
-    pub exclude_junction: bool,     // /XJ
+    pub xf: Vec<String>,             // /XF：排除文件（通配符）
+    pub xd: Vec<String>,             // /XD：排除目录
+    pub exclude_changed: bool,       // /XC
+    pub exclude_newer: bool,         // /XN
+    pub exclude_older: bool,         // /XO
+    pub exclude_lonely: bool,        // /XL：排除源有目标无
+    pub exclude_extra: bool,         // /XX：排除目标多余
+    pub max_size: Option<u64>,       // /MAX:n
+    pub min_size: Option<u64>,       // /MIN:n
+    pub max_age: Option<u64>,        // /MAXAGE:n（天）
+    pub min_age: Option<u64>,        // /MINAGE:n（天）
+    pub max_lad: Option<u64>,        // /MAXLAD:n（天）
+    pub min_lad: Option<u64>,        // /MINLAD:n（天）
+    pub archive: bool,               // /A：只复制归档位文件
+    pub archive_move: bool,          // /M：复制并清除归档位
+    pub include_attrs: Vec<char>,    // /IA:...
+    pub exclude_attrs: Vec<char>,    // /XA:...
+    pub lev: Option<u32>,            // /LEV:n
+    pub exclude_junction: bool,      // /XJ
     pub exclude_junction_file: bool, // /XJF
     pub exclude_junction_dir: bool,  // /XJD
-    pub fft: bool,                  // /FFT：FAT 文件时间（2 秒粒度）
+    pub fft: bool,                   // /FFT：FAT 文件时间（2 秒粒度）
     // 阶段 3：日志与输出控制
-    pub show_ts: bool,   // /TS：文件行显示 UTC 时间戳
-    pub full_path: bool, // /FP：文件行显示完整源路径
-    pub show_bytes: bool, // /BYTES：Options 回显
-    pub eta: bool,        // /ETA：文件行尾显示预计完成时间
+    pub show_ts: bool,             // /TS：文件行显示 UTC 时间戳
+    pub full_path: bool,           // /FP：文件行显示完整源路径
+    pub show_bytes: bool,          // /BYTES：Options 回显
+    pub eta: bool,                 // /ETA：文件行尾显示预计完成时间
     pub log_path: Option<PathBuf>, // /LOG:file、/LOG+:file、/UNILOG:file 或 /UNILOG+:file
     pub log_append: bool,          // /LOG+ /UNILOG+ 追加
     pub log_unicode: bool,         // /UNILOG /UNILOG+：日志文件以 UTF-16LE 写入

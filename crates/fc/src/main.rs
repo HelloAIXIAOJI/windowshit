@@ -13,7 +13,7 @@ use std::fs;
 use std::io::Read;
 use std::process::ExitCode;
 
-use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
+use windowshit_args::{parse, Flag, Kind, Unknown};
 
 const HELP: &str = "fc [/a] [/c] [/l] [/n] [/t] [/u] [/w] [/b] [options] file1 file2
 
@@ -93,6 +93,7 @@ fn norm(s: &str, ignore_case: bool, compress_ws: bool) -> String {
 
 /// 按块输出差异。`lines1`/`lines2` 已按行号对齐比较。
 /// 返回 true 表示有差异。
+#[allow(clippy::too_many_arguments)]
 fn compare_text(
     lines1: &[String],
     lines2: &[String],
@@ -107,11 +108,11 @@ fn compare_text(
     // diff[i]：该行（1-based）是否不同（含缺行）
     let mut diff = vec![false; n];
     let mut any = false;
-    for i in 0..n {
+    for (i, d) in diff.iter_mut().enumerate() {
         let a = lines1.get(i).map(|l| norm(l, ignore_case, compress_ws));
         let b = lines2.get(i).map(|l| norm(l, ignore_case, compress_ws));
         if a != b {
-            diff[i] = true;
+            *d = true;
             any = true;
         }
     }
@@ -188,7 +189,7 @@ fn print_range(lines: &[String], start: usize, end: usize, line_num: bool, abbre
             if let Some(line) = lines.get(i) {
                 print_line(i, line, line_num);
             } else {
-                print_line(i, &String::new(), line_num);
+                print_line(i, "", line_num);
             }
         }
     }
@@ -280,10 +281,7 @@ fn main() -> ExitCode {
         Flag::new("U", Kind::Flag),
         Flag::new("W", Kind::Flag),
     ];
-    let parsed = match parse(&raw, FLAGS, Unknown::Path) {
-        Ok(p) => p,
-        Err(_) => Parsed::default(),
-    };
+    let parsed = parse(&raw, FLAGS, Unknown::Path).unwrap_or_default();
     let abbreviate = parsed.flags.contains_key("A");
     let binary = parsed.flags.contains_key("B");
     let ignore_case = parsed.flags.contains_key("C");
@@ -303,7 +301,11 @@ fn main() -> ExitCode {
 
     let f1 = files[0];
     let f2 = files[1];
-    println!("Comparing files {} and {}", display_path(f1), display_path(f2));
+    println!(
+        "Comparing files {} and {}",
+        display_path(f1),
+        display_path(f2)
+    );
 
     // 二进制比较：流式逐字节，避免整文件读入内存（OOM 风险）。
     if binary {
@@ -341,7 +343,16 @@ fn main() -> ExitCode {
         (read_lines(&d1), read_lines(&d2))
     };
 
-    if compare_text(&l1, &l2, f1, f2, line_num, abbreviate, ignore_case, compress_ws) {
+    if compare_text(
+        &l1,
+        &l2,
+        f1,
+        f2,
+        line_num,
+        abbreviate,
+        ignore_case,
+        compress_ws,
+    ) {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS

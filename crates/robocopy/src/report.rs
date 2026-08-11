@@ -10,13 +10,13 @@ use crate::util::{fmt_bytes, fmt_bytes_sum, fmt_duration, thousands, thousands_d
 /// 输出一行（行尾 CRLF，对齐原版重定向输出；经 sink 分发到 stdout / 日志）。
 #[macro_export]
 macro_rules! outln {
-    ($($t:tt)*) => { crate::sink::outln(&format!($($t)*)) };
+    ($($t:tt)*) => { $crate::sink::outln(&format!($($t)*)) };
 }
 
 /// 原样输出（不追加换行；经 sink 分发到 stdout / 日志）。
 #[macro_export]
 macro_rules! out {
-    ($($t:tt)*) => { crate::sink::out(&format!($($t)*)) };
+    ($($t:tt)*) => { $crate::sink::out(&format!($($t)*)) };
 }
 
 /// 分类字段：Extra/Mismatch 用 `  {:<12}`（14 宽），其它用 `    {:<10}`（14 宽）。
@@ -67,7 +67,11 @@ pub fn output_file_line(
         return;
     }
     // /MT 强制显示完整路径（原版行为），与 /FP 无关（不影响 Options 回显）
-    let display_name = if opts.full_path || opts.mt.is_some() { name } else { file_name_of(name) };
+    let display_name = if opts.full_path || opts.mt.is_some() {
+        name
+    } else {
+        file_name_of(name)
+    };
     // 原版格式：`\t{field}\t\t{sz}[ {ts}]\t{name}[ \t\t{eta}]`（/TS 在大小后、文件名前）
     let ts_part = match ts {
         Some(t) => format!(" {}", crate::time::fmt_utc(t)),
@@ -77,7 +81,11 @@ pub fn output_file_line(
         Some(e) => format!("\t\t{e}"),
         None => String::new(),
     };
-    let line = format!("\t{}\t\t{}{ts_part}\t{display_name}{eta_part}", field_str(class, opts), sz_str(size, opts));
+    let line = format!(
+        "\t{}\t\t{}{ts_part}\t{display_name}{eta_part}",
+        field_str(class, opts),
+        sz_str(size, opts)
+    );
     if progress {
         out!("{line}\r100%  \r\n");
     } else {
@@ -96,12 +104,20 @@ pub fn output_skipped_line(class: Class, size: u64, name: &str, ts: Option<u64>,
         return;
     }
     let field = format!("{:>14}", class.lower());
-    let display_name = if opts.full_path || opts.mt.is_some() { name } else { file_name_of(name) };
+    let display_name = if opts.full_path || opts.mt.is_some() {
+        name
+    } else {
+        file_name_of(name)
+    };
     let ts_part = match ts {
         Some(t) => format!(" {}", crate::time::fmt_utc(t)),
         None => String::new(),
     };
-    outln!("\t{field}\t\t{}{ts_part}\t{}", sz_str(size, opts), display_name);
+    outln!(
+        "\t{field}\t\t{}{ts_part}\t{}",
+        sz_str(size, opts),
+        display_name
+    );
 }
 
 /// 额外文件行（/X 报告 / /PURGE 删除时）：`  *EXTRA File   <size>\t<name>`（size 为原始字节数）。
@@ -303,7 +319,10 @@ pub fn print_header_with(
     simple: bool,
 ) {
     outln!("-------------------------------------------------------------------------------");
-    outln!("{:<81}", "   ROBOCOPY     ::     Robust File Copy for Windows");
+    outln!(
+        "{:<81}",
+        "   ROBOCOPY     ::     Robust File Copy for Windows"
+    );
     outln!("-------------------------------------------------------------------------------");
     // Started 行：stdout 用中文 locale，日志文件用数字格式（实测原版）
     crate::sink::emit_split(
@@ -349,7 +368,12 @@ pub fn print_summary(stats: &Stats, start: Instant, mt: bool) {
 
     outln!(
         "{:>20}{:>10}{:>10}{:>10}{:>10}{:>10}",
-        "Total", "Copied", "Skipped", "Mismatch", "FAILED", "Extras"
+        "Total",
+        "Copied",
+        "Skipped",
+        "Mismatch",
+        "FAILED",
+        "Extras"
     );
     outln!(
         "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
@@ -401,8 +425,16 @@ pub fn print_summary(stats: &Stats, start: Instant, mt: bool) {
     if secs > 0.0 && copied_bytes > 0.0 {
         let bps = copied_bytes / secs;
         let mbpm = bps / 1048576.0 * 60.0;
-        outln!("\r\n\r\n{:>10}{:>20} Bytes/sec.", "Speed :", thousands(bps.round() as u64));
-        outln!("{:>10}{:>20} MegaBytes/min.", "Speed :", thousands_decimal(mbpm, 3));
+        outln!(
+            "\r\n\r\n{:>10}{:>20} Bytes/sec.",
+            "Speed :",
+            thousands(bps.round() as u64)
+        );
+        outln!(
+            "{:>10}{:>20} MegaBytes/min.",
+            "Speed :",
+            thousands_decimal(mbpm, 3)
+        );
     }
 
     crate::sink::emit_split(

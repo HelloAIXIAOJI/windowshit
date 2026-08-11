@@ -17,8 +17,8 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
-use nex_packet::icmp::{IcmpType, IcmpPacket, MutableIcmpPacket};
-use nex_packet::icmpv6::{Icmpv6Type, Icmpv6Packet, MutableIcmpv6Packet};
+use nex_packet::icmp::{IcmpPacket, IcmpType, MutableIcmpPacket};
+use nex_packet::icmpv6::{Icmpv6Packet, Icmpv6Type, MutableIcmpv6Packet};
 use nex_packet::ipv4::Ipv4Packet;
 use nex_packet::ipv6::Ipv6Packet;
 use nex_packet::packet::{MutablePacket, Packet};
@@ -206,9 +206,7 @@ pub fn trace(cfg: &TraceConfig) -> Result<Vec<Hop>, String> {
         if cfg.ip.is_ipv4() {
             socket.set_ttl_v4(ttl).map_err(|e| e.to_string())?;
         } else {
-            socket
-                .set_unicast_hops_v6(ttl)
-                .map_err(|e| e.to_string())?;
+            socket.set_unicast_hops_v6(ttl).map_err(|e| e.to_string())?;
         }
 
         let mut rtts: Vec<Option<u128>> = Vec::with_capacity(cfg.probes_per_hop);

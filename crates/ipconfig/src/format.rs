@@ -129,7 +129,10 @@ pub fn render_basic(i18n: &L10n, adapters: &[AdapterData]) -> String {
         } else {
             for (i, gw) in a.gateways.iter().enumerate() {
                 if i == 0 {
-                    out.push_str(&field(&i18n.tr("field-default-gateway", None), &gw.to_string()));
+                    out.push_str(&field(
+                        &i18n.tr("field-default-gateway", None),
+                        &gw.to_string(),
+                    ));
                 } else {
                     out.push_str(&field("", &gw.to_string()));
                 }
@@ -178,8 +181,16 @@ pub fn render_all(i18n: &L10n, adapters: &[AdapterData]) -> String {
 
         // IPv6 地址（完整）
         let v6_all: Vec<&(Ipv6Addr, u8)> = a.ipv6.iter().collect();
-        let v6_linklocal = v6_all.iter().filter(|(ip, _)| is_linklocal_v6(ip)).copied().collect::<Vec<_>>();
-        let v6_global = v6_all.iter().filter(|(ip, _)| !is_linklocal_v6(ip)).copied().collect::<Vec<_>>();
+        let v6_linklocal = v6_all
+            .iter()
+            .filter(|(ip, _)| is_linklocal_v6(ip))
+            .copied()
+            .collect::<Vec<_>>();
+        let v6_global = v6_all
+            .iter()
+            .filter(|(ip, _)| !is_linklocal_v6(ip))
+            .copied()
+            .collect::<Vec<_>>();
         for (ip, _) in v6_global {
             out.push_str(&field(&i18n.tr("field-ipv6", None), &fmt_v6(a, ip)));
             out.push('\n');
@@ -223,7 +234,10 @@ pub fn render_all(i18n: &L10n, adapters: &[AdapterData]) -> String {
         } else {
             for (i, gw) in a.gateways.iter().enumerate() {
                 if i == 0 {
-                    out.push_str(&field(&i18n.tr("field-default-gateway", None), &gw.to_string()));
+                    out.push_str(&field(
+                        &i18n.tr("field-default-gateway", None),
+                        &gw.to_string(),
+                    ));
                 } else {
                     out.push_str(&field("", &gw.to_string()));
                 }
@@ -238,7 +252,10 @@ pub fn render_all(i18n: &L10n, adapters: &[AdapterData]) -> String {
         } else {
             for (i, dns) in a.dns.iter().enumerate() {
                 if i == 0 {
-                    out.push_str(&field(&i18n.tr("field-dns-servers", None), &dns.to_string()));
+                    out.push_str(&field(
+                        &i18n.tr("field-dns-servers", None),
+                        &dns.to_string(),
+                    ));
                 } else {
                     out.push_str(&field("", &dns.to_string()));
                 }
@@ -250,5 +267,3 @@ pub fn render_all(i18n: &L10n, adapters: &[AdapterData]) -> String {
 
     out
 }
-
-

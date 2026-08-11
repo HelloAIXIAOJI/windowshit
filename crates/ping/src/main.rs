@@ -246,7 +246,10 @@ async fn main() -> ExitCode {
     // 统计信息（复刻 Windows 输出格式）
     println!();
     let loss = sent - received;
-    let loss_pct = if sent > 0 { loss * 100 / sent } else { 0 };
+    let loss_pct = loss
+        .checked_mul(100)
+        .and_then(|x| x.checked_div(sent))
+        .unwrap_or(0);
 
     let mut a = FluentArgs::new();
     a.set("addr", addr.to_string());

@@ -116,7 +116,13 @@ fn main() -> ExitCode {
         let looks_like_file = Path::new(&f).is_file()
             || f.contains(std::path::MAIN_SEPARATOR)
             || f.contains(':')
-            || f.rsplit('.').next().map_or(false, |ext| !ext.is_empty() && ext.len() <= 4 && !ext.contains('*') && !ext.contains('?') && f.contains('.'));
+            || f.rsplit('.').next().is_some_and(|ext| {
+                !ext.is_empty()
+                    && ext.len() <= 4
+                    && !ext.contains('*')
+                    && !ext.contains('?')
+                    && f.contains('.')
+            });
         if looks_like_file {
             files.push(f);
         } else {
@@ -136,7 +142,11 @@ fn main() -> ExitCode {
     // 构建正则
     let mut regexes = Vec::new();
     for p in &patterns {
-        let mut expr = if args.literal { regex::escape(p) } else { p.clone() };
+        let mut expr = if args.literal {
+            regex::escape(p)
+        } else {
+            p.clone()
+        };
         if args.whole {
             expr = format!("^(?:{expr})$");
         } else {
@@ -147,7 +157,10 @@ fn main() -> ExitCode {
                 expr = format!("(?:{expr})$");
             }
         }
-        match RegexBuilder::new(&expr).case_insensitive(args.ignore_case).build() {
+        match RegexBuilder::new(&expr)
+            .case_insensitive(args.ignore_case)
+            .build()
+        {
             Ok(re) => regexes.push(re),
             Err(_) => {
                 eprintln!("{}", i18n.tr("error-bad-regex", None));
@@ -183,7 +196,11 @@ fn main() -> ExitCode {
 
     let match_line = |line: &str| -> bool {
         let m = regexes.iter().any(|re| re.is_match(line));
-        if args.invert { !m } else { m }
+        if args.invert {
+            !m
+        } else {
+            m
+        }
     };
 
     let mut found = false;

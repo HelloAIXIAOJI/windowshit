@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::process::ExitCode;
 
 use sysinfo::System;
-use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
+use windowshit_args::{parse, Flag, Kind, Unknown};
 use windowshit_i18n::L10n;
 
 struct Row {
@@ -80,7 +80,7 @@ fn format_kb(kb: u64) -> String {
     let digits = kb.to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -109,14 +109,8 @@ fn main() -> ExitCode {
     }
 
     // 精确开关表；未知 /xxx 忽略（原版 tasklist 对未知开关不报错）
-    const FLAGS: &[Flag] = &[
-        Flag::new("FO", Kind::Value),
-        Flag::new("NH", Kind::Flag),
-    ];
-    let parsed = match parse(&raw, FLAGS, Unknown::Ignore) {
-        Ok(p) => p,
-        Err(_) => Parsed::default(),
-    };
+    const FLAGS: &[Flag] = &[Flag::new("FO", Kind::Value), Flag::new("NH", Kind::Flag)];
+    let parsed = parse(&raw, FLAGS, Unknown::Ignore).unwrap_or_default();
     let mut format = "TABLE".to_string();
     if let Some(v) = parsed.flags.get("FO").and_then(|v| *v) {
         format = v.to_uppercase();
@@ -135,7 +129,7 @@ fn main() -> ExitCode {
     let sessions = session_map();
 
     let mut rows: Vec<Row> = Vec::new();
-    for (_pid, proc_) in sys.processes() {
+    for proc_ in sys.processes().values() {
         let pid = proc_.pid().as_u32();
         // 会话号：WTS 枚举优先，兜底单查，再无则 0
         let sid = sessions
@@ -168,8 +162,18 @@ fn main() -> ExitCode {
     match format.as_str() {
         "TABLE" => {
             if !nh {
-                println!("{:<25} {:>8} {:<16} {:>11} {:>12}", col_image, col_pid, col_session, col_sno, col_mem);
-                println!("{} {} {} {} {}", "=".repeat(25), "=".repeat(8), "=".repeat(16), "=".repeat(11), "=".repeat(12));
+                println!(
+                    "{:<25} {:>8} {:<16} {:>11} {:>12}",
+                    col_image, col_pid, col_session, col_sno, col_mem
+                );
+                println!(
+                    "{} {} {} {} {}",
+                    "=".repeat(25),
+                    "=".repeat(8),
+                    "=".repeat(16),
+                    "=".repeat(11),
+                    "=".repeat(12)
+                );
             }
             for r in &rows {
                 println!(
@@ -195,7 +199,9 @@ fn main() -> ExitCode {
         }
         "CSV" => {
             if !nh {
-                println!("\"{col_image}\",\"{col_pid}\",\"{col_session}\",\"{col_sno}\",\"{col_mem}\"");
+                println!(
+                    "\"{col_image}\",\"{col_pid}\",\"{col_session}\",\"{col_sno}\",\"{col_mem}\""
+                );
             }
             for r in &rows {
                 println!(

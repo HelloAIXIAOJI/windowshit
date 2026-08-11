@@ -42,7 +42,11 @@ fn parse_args(raw: &[String], i18n: &L10n) -> Result<Args, String> {
     while i < raw.len() {
         let arg = &raw[i];
         if let Some(opt) = arg.strip_prefix('-') {
-            let (flag, rest) = if opt.len() > 1 { opt.split_at(1) } else { (opt, "") };
+            let (flag, rest) = if opt.len() > 1 {
+                opt.split_at(1)
+            } else {
+                (opt, "")
+            };
             let inline: Option<&str> = if rest.is_empty() { None } else { Some(rest) };
 
             // 未实现的选项：明确报错
@@ -266,7 +270,7 @@ async fn main() -> ExitCode {
     println!();
 
     // ===== 阶段 2：逐跳统计 =====
-    let seconds = ((args.queries as u64 - 1) * args.period_ms + 999) / 1000;
+    let seconds = ((args.queries as u64 - 1) * args.period_ms).div_ceil(1000);
     let mut a = FluentArgs::new();
     a.set("seconds", seconds);
     println!("{}", i18n.tr("computing-stats", Some(&a)));
@@ -291,7 +295,14 @@ async fn main() -> ExitCode {
 
         if hop_idx == 1 {
             // hop0 行（本机）+ 竖线
-            println!("{:>3}{}{:>17}{:>17}  {}", 0, " ".repeat(7), "", "", fmt_addr(&local, args.no_resolve));
+            println!(
+                "{:>3}{}{:>17}{:>17}  {}",
+                0,
+                " ".repeat(7),
+                "",
+                "",
+                fmt_addr(&local, args.no_resolve)
+            );
             let link_pct = pct(st.lost, q);
             println!("{:>33}{}/{:>4} = {:>2}%   |", "", st.lost, q, link_pct);
         }
@@ -299,16 +310,35 @@ async fn main() -> ExitCode {
         // Source to Here = 到该跳累计丢包；This Node/Link = 相对上一跳的增量
         let src_col = format!("{:>5}{}/{:>4} = {:>2}%", "", st.lost, q, pct(st.lost, q));
         let link_lost = st.lost.saturating_sub(prev_lost);
-        let link_col = format!("{:>5}{}/{:>4} = {:>2}%", "", link_lost, q, pct(link_lost, q));
+        let link_col = format!(
+            "{:>5}{}/{:>4} = {:>2}%",
+            "",
+            link_lost,
+            q,
+            pct(link_lost, q)
+        );
         prev_lost = st.lost;
 
-        println!("{:>3}{}{}{}  {}", hop_idx, rtt_col, src_col, link_col, fmt_addr(&ip, args.no_resolve));
+        println!(
+            "{:>3}{}{}{}  {}",
+            hop_idx,
+            rtt_col,
+            src_col,
+            link_col,
+            fmt_addr(&ip, args.no_resolve)
+        );
 
         // 非最后一跳输出竖线行
         if i + 1 < stats.len() {
             let next_lost = stats[i + 1].lost;
             let next_link = next_lost.saturating_sub(st.lost);
-            println!("{:>33}{}/{:>4} = {:>2}%   |", "", next_link, q, pct(next_link, q));
+            println!(
+                "{:>33}{}/{:>4} = {:>2}%   |",
+                "",
+                next_link,
+                q,
+                pct(next_link, q)
+            );
         }
     }
 

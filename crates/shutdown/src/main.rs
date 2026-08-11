@@ -148,9 +148,7 @@ fn is_admin() -> bool {
         use windows_sys::Win32::Security::{
             GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
         };
-        use windows_sys::Win32::System::Threading::{
-            GetCurrentProcess, OpenProcessToken,
-        };
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
         let mut token = std::mem::zeroed();
         if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
@@ -334,7 +332,9 @@ fn execute_shutdown(
     machine: Option<&str>,
     reason: u32,
 ) -> ExitCode {
-    use windows_sys::Win32::System::Shutdown::{InitiateSystemShutdownExW, SHTDN_REASON_MAJOR_OTHER};
+    use windows_sys::Win32::System::Shutdown::{
+        InitiateSystemShutdownExW, SHTDN_REASON_MAJOR_OTHER,
+    };
 
     let reboot = matches!(action, Some("R") | Some("G") | Some("SG") | Some("O"));
 
@@ -370,7 +370,7 @@ fn execute_shutdown(
             timeout,
             force as i32,
             reboot as i32,
-            reason | SHTDN_REASON_MAJOR_OTHER as u32,
+            reason | SHTDN_REASON_MAJOR_OTHER,
         )
     };
     if r != 0 {
@@ -405,7 +405,9 @@ fn abort_shutdown(machine: Option<&str>) -> ExitCode {
         ExitCode::SUCCESS
     } else {
         let err = unsafe { windows_sys::Win32::Foundation::GetLastError() };
-        eprintln!("Unable to abort the system shutdown because no shutdown was in progress.({err})");
+        eprintln!(
+            "Unable to abort the system shutdown because no shutdown was in progress.({err})"
+        );
         ExitCode::from(err as u8)
     }
 }
@@ -436,9 +438,7 @@ fn execute_shutdown(
             Some("L") => "log off",
             _ => "shutdown",
         };
-        println!(
-            "System will {action_label} in {timeout} seconds. (Ctrl+C to cancel)"
-        );
+        println!("System will {action_label} in {timeout} seconds. (Ctrl+C to cancel)");
         for remaining in (1..=timeout).rev() {
             if remaining % 10 == 0 || remaining <= 5 {
                 println!("{remaining}");
@@ -519,5 +519,3 @@ fn has_command(name: &str) -> bool {
         })
         .unwrap_or(false)
 }
-
-

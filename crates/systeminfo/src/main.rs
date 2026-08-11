@@ -21,7 +21,7 @@ fn thousands(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -34,7 +34,15 @@ fn fmt_boot_time(ts: u64) -> String {
     match chrono::DateTime::from_timestamp(ts as i64, 0) {
         Some(dt) => {
             let l = dt.with_timezone(&chrono::Local);
-            format!("{}/{}/{}, {}:{}:{}", l.year(), l.month(), l.day(), l.hour(), l.minute(), l.second())
+            format!(
+                "{}/{}/{}, {}:{}:{}",
+                l.year(),
+                l.month(),
+                l.day(),
+                l.hour(),
+                l.minute(),
+                l.second()
+            )
         }
         None => String::new(),
     }
@@ -42,7 +50,7 @@ fn fmt_boot_time(ts: u64) -> String {
 
 /// 网络卡信息：(description, friendly_name, ips)。统一走公共数据层。
 fn network_cards() -> Vec<(String, String, Vec<IpAddr>)> {
-    use windowshit_netinfo::{AdapterKind, AdapterData};
+    use windowshit_netinfo::{AdapterData, AdapterKind};
     let mut out = Vec::new();
     if let Ok(adapters) = windowshit_netinfo::get_adapters() {
         for a in adapters {
@@ -88,7 +96,9 @@ fn main() -> ExitCode {
             println!();
             println!("This tool displays information about a computer and its operating system,");
             println!("including hardware configuration, software information, computer name,");
-            println!("processor, memory, network information, and operating system patch information.");
+            println!(
+                "processor, memory, network information, and operating system patch information."
+            );
         }
         return ExitCode::SUCCESS;
     }
@@ -96,7 +106,9 @@ fn main() -> ExitCode {
     let mut sys = System::new_all();
     sys.refresh_all();
 
-    let host = hostname_rs::get().map(|h| h.to_string_lossy().to_string()).unwrap_or_default();
+    let host = hostname_rs::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_default();
     let os = os_info::get();
 
     let mut lines: Vec<String> = Vec::new();
@@ -121,12 +133,21 @@ fn main() -> ExitCode {
         n
     };
     lines.push(line(&i18n.tr("os-name", None), &os_name));
-    lines.push(line(&i18n.tr("os-version", None), &os.version().to_string()));
+    lines.push(line(
+        &i18n.tr("os-version", None),
+        &os.version().to_string(),
+    ));
 
     #[cfg(windows)]
     {
-        lines.push(line(&i18n.tr("os-manufacturer", None), "Microsoft Corporation"));
-        lines.push(line(&i18n.tr("os-configuration", None), "Standalone Workstation"));
+        lines.push(line(
+            &i18n.tr("os-manufacturer", None),
+            "Microsoft Corporation",
+        ));
+        lines.push(line(
+            &i18n.tr("os-configuration", None),
+            "Standalone Workstation",
+        ));
         lines.push(line(&i18n.tr("os-build-type", None), "Multiprocessor Free"));
 
         let win_ver = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
@@ -139,7 +160,9 @@ fn main() -> ExitCode {
         if let Some(v) = windowshit_winreg::reg_query_string(win_ver, "ProductId") {
             lines.push(line(&i18n.tr("product-id", None), &v));
         }
-        if let Some(v) = windowshit_winreg::reg_query_string(win_ver, "InstallDate").and_then(|s| s.parse::<u64>().ok()) {
+        if let Some(v) = windowshit_winreg::reg_query_string(win_ver, "InstallDate")
+            .and_then(|s| s.parse::<u64>().ok())
+        {
             lines.push(line(&i18n.tr("original-install", None), &fmt_boot_time(v)));
         }
         let bios = "HARDWARE\\DESCRIPTION\\System\\BIOS";
@@ -165,7 +188,9 @@ fn main() -> ExitCode {
     #[cfg(windows)]
     {
         let bios = "HARDWARE\\DESCRIPTION\\System\\BIOS";
-        if let Some(v) = windowshit_winreg::reg_query_string(bios, "BIOSVersion").map(|s| s.replace(',', ", ")) {
+        if let Some(v) =
+            windowshit_winreg::reg_query_string(bios, "BIOSVersion").map(|s| s.replace(',', ", "))
+        {
             lines.push(line(&i18n.tr("bios-version", None), &v));
         }
         if let Some(v) = std::env::var_os("WINDIR").map(|v| v.to_string_lossy().to_string()) {
@@ -231,7 +256,10 @@ fn main() -> ExitCode {
     let cards = network_cards();
     let mut a = FluentArgs::new();
     a.set("count", cards.len() as u64);
-    lines.push(line(&i18n.tr("network-cards", None), &i18n.tr("installed", Some(&a))));
+    lines.push(line(
+        &i18n.tr("network-cards", None),
+        &i18n.tr("installed", Some(&a)),
+    ));
     for (idx, (desc, friendly, ips)) in cards.iter().enumerate() {
         lines.push(format!("{:>27} [{:02}]: {desc}", "", idx + 1));
         lines.push(format!(

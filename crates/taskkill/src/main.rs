@@ -4,6 +4,7 @@
 //! - 枚举进程：`sysinfo`（跨平台，tasklist 已验证可靠）
 //! - 终止进程：`kill_tree`（跨平台统一 crate，内部封装平台 API：
 //!   Windows 走 OpenProcess+TerminateProcess，Unix 走 nix 信号）
+//!
 //! 本文件**无平台分支**。
 //!
 //! 行为对齐原版（实测校准）：
@@ -142,12 +143,7 @@ fn wild_bytes(p: &[u8], n: &[u8]) -> bool {
 
 /// 对单个 PID 执行终止，返回是否"至少有一个进程被终止/已消失"。
 /// `im_name` 为 Some 时走 /IM 输出格式（映像名大写）。
-fn kill_one(
-    pid: u32,
-    force: bool,
-    im_name: Option<&str>,
-    i18n: &L10n,
-) -> bool {
+fn kill_one(pid: u32, force: bool, im_name: Option<&str>, i18n: &L10n) -> bool {
     let signal = if force { "SIGKILL" } else { "SIGTERM" };
     let config = Config {
         signal: signal.to_string(),
@@ -370,7 +366,10 @@ fn main() -> ExitCode {
         let exists = sys.process(sysinfo::Pid::from_u32(*pid)).is_some();
         if !exists {
             if im_mode.is_none() {
-                eprintln!("{}", i18n.tr("not-found", args_target(&pid.to_string()).as_ref()));
+                eprintln!(
+                    "{}",
+                    i18n.tr("not-found", args_target(&pid.to_string()).as_ref())
+                );
             }
             continue;
         }

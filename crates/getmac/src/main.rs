@@ -5,7 +5,7 @@
 
 use std::process::ExitCode;
 
-use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
+use windowshit_args::{parse, Flag, Kind, Unknown};
 use windowshit_i18n::{FluentArgs, L10n};
 use windowshit_netinfo::{AdapterData, AdapterKind};
 
@@ -108,10 +108,7 @@ fn main() -> ExitCode {
         Flag::new("NH", Kind::Flag),
         Flag::new("V", Kind::Flag),
     ];
-    let parsed = match parse(&raw, FLAGS, Unknown::Ignore) {
-        Ok(p) => p,
-        Err(_) => Parsed::default(),
-    };
+    let parsed = parse(&raw, FLAGS, Unknown::Ignore).unwrap_or_default();
     let mut format = "TABLE".to_string();
     if let Some(v) = parsed.flags.get("FO").and_then(|v| *v) {
         format = v.to_uppercase();

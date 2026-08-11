@@ -66,8 +66,14 @@ fn classify(src: &Path, dst: &Path, opts: &Options) -> Class {
         return Class::Same; // 目录本身不分类
     }
     // /FFT：比较前将时间戳向下取整到 2 秒（FAT 粒度）
-    let src_mt = src_meta.modified().ok().map(|t| if opts.fft { fft_round(t) } else { t });
-    let dst_mt = dst_meta.modified().ok().map(|t| if opts.fft { fft_round(t) } else { t });
+    let src_mt = src_meta
+        .modified()
+        .ok()
+        .map(|t| if opts.fft { fft_round(t) } else { t });
+    let dst_mt = dst_meta
+        .modified()
+        .ok()
+        .map(|t| if opts.fft { fft_round(t) } else { t });
     match (src_mt, dst_mt) {
         (Some(s), Some(d)) if s < d => Class::Older,
         (Some(s), Some(d)) if s > d => Class::Newer,
@@ -94,8 +100,12 @@ fn attrs_equal(src: &Path, dst: &Path) -> bool {
     }
     #[cfg(not(windows))]
     {
-        let s = fs::metadata(src).map(|m| m.permissions().readonly()).unwrap_or(false);
-        let d = fs::metadata(dst).map(|m| m.permissions().readonly()).unwrap_or(false);
+        let s = fs::metadata(src)
+            .map(|m| m.permissions().readonly())
+            .unwrap_or(false);
+        let d = fs::metadata(dst)
+            .map(|m| m.permissions().readonly())
+            .unwrap_or(false);
         s == d
     }
 }
@@ -105,7 +115,11 @@ fn attrs_equal(src: &Path, dst: &Path) -> bool {
 fn file_attrs(p: &Path) -> u32 {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetFileAttributesW;
-    let w: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let w: Vec<u16> = p
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
     // SAFETY: 标准 API，缓冲区正确
     unsafe {
         let a = GetFileAttributesW(w.as_ptr());
@@ -160,7 +174,11 @@ fn copy_attrs(src: &Path, dst: &Path) {
 fn set_file_attrs(p: &Path, attrs: u32) {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::SetFileAttributesW;
-    let w: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let w: Vec<u16> = p
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
     // SAFETY: 标准 API，缓冲区正确
     unsafe {
         let _ = SetFileAttributesW(w.as_ptr(), attrs);
@@ -229,7 +247,10 @@ fn attr_letters(p: &Path) -> Vec<char> {
 /// Unix：仅支持只读属性 R。
 #[cfg(not(windows))]
 fn attr_letters(p: &Path) -> Vec<char> {
-    if fs::metadata(p).map(|m| m.permissions().readonly()).unwrap_or(false) {
+    if fs::metadata(p)
+        .map(|m| m.permissions().readonly())
+        .unwrap_or(false)
+    {
         vec!['R']
     } else {
         Vec::new()
@@ -253,8 +274,16 @@ fn age_excluded(meta: &fs::Metadata, opts: &Options) -> bool {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let secs_of = |day: u64| day.saturating_mul(86400);
-    let mtime = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
-    let atime = meta.accessed().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs());
+    let atime = meta
+        .accessed()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs());
     if let (Some(m), Some(n)) = (mtime, opts.max_age) {
         if now.saturating_sub(m) > secs_of(n) {
             return true; // 比 n 天更旧 → /MAXAGE 排除
@@ -293,16 +322,16 @@ fn file_excluded(src: &Path, name: &str, meta: &fs::Metadata, opts: &Options) ->
             return true;
         }
     }
-    if opts.max_age.is_some() || opts.min_age.is_some() || opts.max_lad.is_some() || opts.min_lad.is_some()
+    if (opts.max_age.is_some()
+        || opts.min_age.is_some()
+        || opts.max_lad.is_some()
+        || opts.min_lad.is_some())
+        && age_excluded(meta, opts)
     {
-        if age_excluded(meta, opts) {
-            return true;
-        }
+        return true;
     }
-    if opts.archive || opts.archive_move {
-        if !has_archive(src) {
-            return true;
-        }
+    if (opts.archive || opts.archive_move) && !has_archive(src) {
+        return true;
     }
     if !opts.include_attrs.is_empty() || !opts.exclude_attrs.is_empty() {
         let letters = attr_letters(src);
@@ -328,7 +357,9 @@ fn is_reparse_point(p: &Path) -> bool {
     }
     #[cfg(not(windows))]
     {
-        fs::symlink_metadata(p).map(|m| m.file_type().is_symlink()).unwrap_or(false)
+        fs::symlink_metadata(p)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
     }
 }
 
@@ -343,7 +374,7 @@ fn copy_streaming(src: &Path, dst: &Path, animate: bool, restartable: bool) -> i
         if let Ok(dm) = fs::metadata(dst) {
             let dlen = dm.len();
             if dlen > 0 && dlen < total {
-                let w = fs::OpenOptions::new().write(true).append(true).open(dst)?;
+                let w = fs::OpenOptions::new().append(true).open(dst)?;
                 copied = dlen;
                 w
             } else {
@@ -530,6 +561,7 @@ impl Pool {
 /// 递归遍历 src 目录。`new_dir`：目标目录为本次新建（显示 `New Dir`）。
 /// `level`：当前层级（根=1），用于 /LEV 限制。`rc` 累积退出码标志。
 /// `pool`：/MT 线程池（目录内文件并行复制）；None 为单线程。
+#[allow(clippy::too_many_arguments)]
 pub fn walk(
     src: &Path,
     dst: &Path,
@@ -620,7 +652,10 @@ pub fn walk(
         } else {
             " ".repeat(19)
         };
-        crate::outln!("\t{field}{matched_count}\t{}", crate::util::display_dir(src));
+        crate::outln!(
+            "\t{field}{matched_count}\t{}",
+            crate::util::display_dir(src)
+        );
     }
 
     // extra 处理（目标中存在而源中没有的）。
@@ -634,7 +669,9 @@ pub fn walk(
                 for e in entries.flatten() {
                     let p = e.path();
                     let name = e.file_name();
-                    let in_src = files.iter().any(|f| f.file_name() == Some(name.as_os_str()))
+                    let in_src = files
+                        .iter()
+                        .any(|f| f.file_name() == Some(name.as_os_str()))
                         || dirs.iter().any(|d| d.file_name() == Some(name.as_os_str()));
                     if in_src {
                         continue;
@@ -692,7 +729,11 @@ pub fn walk(
                     // /L 也报告并统计（原版实测）。不递归目录内容（/PURGE 才递归列出并删除）。
                     for ed in &extra_dirs {
                         if !opts.no_dir_list {
-                            crate::outln!("\t{:<18}-1\t{}", "*EXTRA Dir", crate::util::display_dir(ed));
+                            crate::outln!(
+                                "\t{:<18}-1\t{}",
+                                "*EXTRA Dir",
+                                crate::util::display_dir(ed)
+                            );
                         }
                         stats.dir(EXT, 1);
                         *rc |= 2;
@@ -749,7 +790,12 @@ pub fn walk(
                 let animate = !opts.no_progress && !opts.no_file_list && io::stdout().is_terminal();
                 if animate {
                     // 文件行先不带换行打印，复制过程动态刷新百分比
-                    crate::out!("\t{}\t\t{}\t{}", crate::report::field_str(*class, opts), crate::report::sz_str(sz, opts), display_name);
+                    crate::out!(
+                        "\t{}\t\t{}\t{}",
+                        crate::report::field_str(*class, opts),
+                        crate::report::sz_str(sz, opts),
+                        display_name
+                    );
                 }
                 if copy_with_retry(f, &dst_file, opts, animate).is_ok() {
                     stats.file(COP, 1, sz);
@@ -761,12 +807,23 @@ pub fn walk(
                             eta_str = eta_estimate(e, sz);
                         }
                     }
-                    let eta_part = eta_str.as_ref().map(|e| format!("\t\t{e}")).unwrap_or_default();
+                    let eta_part = eta_str
+                        .as_ref()
+                        .map(|e| format!("\t\t{e}"))
+                        .unwrap_or_default();
                     if animate {
                         crate::out!("\r100%  {eta_part}\r\n");
                     } else {
                         // 非 TTY：一次性进度行（对齐原版重定向字节 `name[ \t\tETA]\r100%  \r\n`）
-                        output_file_line(*class, sz, &display_name, ts_arg, opts, !opts.no_progress && !opts.no_file_list, eta_str.as_deref());
+                        output_file_line(
+                            *class,
+                            sz,
+                            &display_name,
+                            ts_arg,
+                            opts,
+                            !opts.no_progress && !opts.no_file_list,
+                            eta_str.as_deref(),
+                        );
                     }
                 } else {
                     stats.file(FAI, 1, sz);
@@ -796,7 +853,15 @@ pub fn walk(
                 stats.file(TOT, 1, sz);
                 stats.file(MIS, 1, sz);
                 *rc |= 4;
-                output_file_line(Class::Mismatch, sz, &display_name, ts_arg, opts, false, None);
+                output_file_line(
+                    Class::Mismatch,
+                    sz,
+                    &display_name,
+                    ts_arg,
+                    opts,
+                    false,
+                    None,
+                );
             }
         }
     }
@@ -831,13 +896,8 @@ pub fn walk(
         }
         let dst_dir = dst.join(d.file_name().unwrap());
         let empty = is_dir_empty(d);
-        let need = if opts.subdirs_all {
-            true // /E /MIR：含空目录
-        } else if opts.subdirs_nonempty && !empty {
-            true // /S：非空目录
-        } else {
-            false
-        };
+        // /E /MIR 含空目录；/S 仅非空目录
+        let need = opts.subdirs_all || (opts.subdirs_nonempty && !empty);
         if !need {
             continue;
         }
@@ -858,7 +918,17 @@ pub fn walk(
             }
         }
         // /L 不创建目录，但目录在目标中不存在仍算 New Dir
-        walk(d, &dst_dir, opts, stats, rc, !dst_dir_existed, level + 1, eta.as_deref_mut(), pool);
+        walk(
+            d,
+            &dst_dir,
+            opts,
+            stats,
+            rc,
+            !dst_dir_existed,
+            level + 1,
+            eta.as_deref_mut(),
+            pool,
+        );
     }
 }
 
@@ -890,7 +960,15 @@ fn flush_mt_jobs(
                     eta_str = eta_estimate(e, j.sz);
                 }
             }
-            output_file_line(j.class, j.sz, &j.name, j.ts, opts, false, eta_str.as_deref());
+            output_file_line(
+                j.class,
+                j.sz,
+                &j.name,
+                j.ts,
+                opts,
+                false,
+                eta_str.as_deref(),
+            );
         } else {
             stats.file(FAI, 1, j.sz);
             *rc |= 8;
@@ -912,7 +990,10 @@ fn extra_name(ef: &Path, mt: bool) -> String {
     if mt {
         ef.to_string_lossy().replace('/', "\\")
     } else {
-        ef.file_name().unwrap_or_default().to_string_lossy().to_string()
+        ef.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string()
     }
 }
 

@@ -98,15 +98,14 @@ pub fn parse(raw: &[String], i18n: &L10n) -> Result<Args, ArgError> {
             if opt.is_empty() {
                 let mut a = FluentArgs::new();
                 a.set("arg", arg);
-                return Err(ArgError::new(
-                    i18n,
-                    "error-bad-parameter",
-                    Some(&a),
-                    false,
-                ));
+                return Err(ArgError::new(i18n, "error-bad-parameter", Some(&a), false));
             }
             // 支持 "-n 4" 和 "-n4" 两种写法
-            let (flag, rest) = if opt.len() > 1 { opt.split_at(1) } else { (opt, "") };
+            let (flag, rest) = if opt.len() > 1 {
+                opt.split_at(1)
+            } else {
+                (opt, "")
+            };
             let inline_val: Option<&str> = if rest.is_empty() { None } else { Some(rest) };
 
             // 尚未真正实现的选项：明确报错，不假装支持
@@ -216,12 +215,7 @@ pub fn parse(raw: &[String], i18n: &L10n) -> Result<Args, ArgError> {
                         a.set("flag", "l");
                         a.set("min", 0u64);
                         a.set("max", 65500u64);
-                        return Err(ArgError::new(
-                            i18n,
-                            "error-value-range",
-                            Some(&a),
-                            false,
-                        ));
+                        return Err(ArgError::new(i18n, "error-value-range", Some(&a), false));
                     }
                     args.size = v as usize;
                 }
@@ -253,12 +247,7 @@ pub fn parse(raw: &[String], i18n: &L10n) -> Result<Args, ArgError> {
                     if t.parse::<IpAddr>().is_ok() {
                         let mut a = FluentArgs::new();
                         a.set("arg", arg);
-                        return Err(ArgError::new(
-                            i18n,
-                            "error-bad-parameter",
-                            Some(&a),
-                            false,
-                        ));
+                        return Err(ArgError::new(i18n, "error-bad-parameter", Some(&a), false));
                     }
                 }
             } else {
@@ -276,12 +265,7 @@ pub fn parse(raw: &[String], i18n: &L10n) -> Result<Args, ArgError> {
         let mut a = FluentArgs::new();
         a.set("flag", last);
         a.set("ver", ver);
-        return Err(ArgError::new(
-            i18n,
-            "error-only-supported",
-            Some(&a),
-            false,
-        ));
+        return Err(ArgError::new(i18n, "error-only-supported", Some(&a), false));
     }
 
     Ok(args)
@@ -295,19 +279,14 @@ fn parse_u32_range(
     i18n: &L10n,
 ) -> Result<u32, ArgError> {
     let v = value.as_deref().and_then(|s| s.parse::<u64>().ok());
-    let bad = v.map_or(true, |v| v < min || v > max);
+    let bad = v.is_none_or(|v| v < min || v > max);
     if bad {
         // 原版对非数字和越界统一报 range 错误
         let mut a = FluentArgs::new();
         a.set("flag", flag);
         a.set("min", min);
         a.set("max", max);
-        return Err(ArgError::new(
-            i18n,
-            "error-value-range",
-            Some(&a),
-            false,
-        ));
+        return Err(ArgError::new(i18n, "error-value-range", Some(&a), false));
     }
     Ok(v.unwrap() as u32)
 }
@@ -350,7 +329,7 @@ mod tests {
     fn slash_prefix() {
         assert_eq!(p(&["/n", "3", "/a", "127.0.0.1"]).count, 3);
         assert!(p(&["/t", "127.0.0.1"]).continuous);
-        assert_eq!(p(&["/?", "127.0.0.1"]).help, true);
+        assert!(p(&["/?", "127.0.0.1"]).help);
     }
 
     #[test]
@@ -359,7 +338,10 @@ mod tests {
         // -n abc → range 错误（原版同此）
         let v = vec!["-n".to_string(), "abc".to_string(), "h".to_string()];
         let e = parse(&v, &i18n).unwrap_err();
-        assert_eq!(e.message, "Bad value for option -n, valid range is from 1 to 4294967295.");
+        assert_eq!(
+            e.message,
+            "Bad value for option -n, valid range is from 1 to 4294967295."
+        );
         assert!(!e.show_help);
         // -l abc → 0 字节（原版同此）
         assert_eq!(p(&["-l", "abc", "h"]).size, 0);

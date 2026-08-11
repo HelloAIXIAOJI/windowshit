@@ -1,6 +1,5 @@
 /// 输出系统主机名（跨平台 `hostname` crate，无平台分支）。
 /// 错误消息走 i18n 本地化。
-
 use windowshit_i18n::L10n;
 
 fn main() {

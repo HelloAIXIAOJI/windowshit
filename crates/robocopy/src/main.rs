@@ -129,7 +129,7 @@ fn build_opts(parsed: &Parsed, mt: Option<usize>, xf: Vec<String>, xd: Vec<Strin
             .or_else(|| parsed.flags.get("LOG"))
             .or_else(|| parsed.flags.get("LOG+"))
             .and_then(|v| *v)
-            .map(|s| PathBuf::from(s)),
+            .map(PathBuf::from),
         log_append: parsed.flags.contains_key("LOG+") || parsed.flags.contains_key("UNILOG+"),
         log_unicode: parsed.flags.contains_key("UNILOG") || parsed.flags.contains_key("UNILOG+"),
         unicode: parsed.flags.contains_key("UNICODE"),
@@ -262,10 +262,7 @@ fn main() -> ExitCode {
     let (path_slots, rest) = extract_abs_paths(&rest);
 
     // robocopy 对未知开关静默忽略
-    let parsed = match parse(&rest, FLAGS, Unknown::Ignore) {
-        Ok(p) => p,
-        Err(_) => Parsed::default(),
-    };
+    let parsed = parse(&rest, FLAGS, Unknown::Ignore).unwrap_or_default();
 
     // 按原顺序合并位置参数：抽出的绝对路径 + parse 收集的普通参数
     let mut paths: Vec<String> = Vec::new();
@@ -288,7 +285,12 @@ fn main() -> ExitCode {
 
     // 初始化日志输出目标（/LOG /LOG+ /UNILOG /UNILOG+ /TEE）
     if let Some(log_path) = &opts.log_path {
-        sink::init(Some((log_path.clone(), opts.log_append)), opts.tee, opts.log_unicode, opts.unicode);
+        sink::init(
+            Some((log_path.clone(), opts.log_append)),
+            opts.tee,
+            opts.log_unicode,
+            opts.unicode,
+        );
         // 用 absolutize（相对转绝对）而非 canonicalize，避免 Windows 的 `\\?\` 前缀
         let abs = absolutize(&log_path.to_string_lossy());
         let path_str = abs.to_string_lossy().replace('/', "\\");

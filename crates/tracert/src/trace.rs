@@ -11,8 +11,8 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
-use nex_packet::icmp::{IcmpType, IcmpPacket, MutableIcmpPacket};
-use nex_packet::icmpv6::{Icmpv6Type, Icmpv6Packet, MutableIcmpv6Packet};
+use nex_packet::icmp::{IcmpPacket, IcmpType, MutableIcmpPacket};
+use nex_packet::icmpv6::{Icmpv6Packet, Icmpv6Type, MutableIcmpv6Packet};
 use nex_packet::ipv4::Ipv4Packet;
 use nex_packet::ipv6::Ipv6Packet;
 use nex_packet::packet::{MutablePacket, Packet};
@@ -205,16 +205,14 @@ pub fn trace(cfg: &TraceConfig) -> Result<Vec<Hop>, String> {
         if cfg.ip.is_ipv4() {
             socket.set_ttl_v4(ttl).map_err(|e| e.to_string())?;
         } else {
-            socket
-                .set_unicast_hops_v6(ttl)
-                .map_err(|e| e.to_string())?;
+            socket.set_unicast_hops_v6(ttl).map_err(|e| e.to_string())?;
         }
 
         let mut rtts: [Option<u128>; PROBES_PER_HOP] = [None, None, None];
         let mut hop_ip: Option<IpAddr> = None;
         let mut reached = false;
 
-        for probe in 0..PROBES_PER_HOP {
+        for slot in rtts.iter_mut() {
             seq = seq.wrapping_add(1);
             let pkt = if cfg.ip.is_ipv4() {
                 build_echo_v4(ident, seq)
@@ -260,7 +258,7 @@ pub fn trace(cfg: &TraceConfig) -> Result<Vec<Hop>, String> {
             };
 
             if let Some((ip, is_reached)) = reply {
-                rtts[probe] = Some(start.elapsed().as_millis());
+                *slot = Some(start.elapsed().as_millis());
                 if hop_ip.is_none() {
                     hop_ip = Some(ip);
                 }

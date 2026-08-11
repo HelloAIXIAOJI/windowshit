@@ -116,9 +116,7 @@ fn main() -> ExitCode {
     };
 
     // 原版比较规则（实测确认）：key 相同则再按整行（大小写不敏感）定序
-    let full_lower = |line: &str| -> String {
-        line.chars().flat_map(char::to_lowercase).collect()
-    };
+    let full_lower = |line: &str| -> String { line.chars().flat_map(char::to_lowercase).collect() };
     let cmp = |a: &str, b: &str| -> std::cmp::Ordering {
         key(a)
             .cmp(&key(b))
@@ -147,8 +145,7 @@ fn main() -> ExitCode {
             };
             let mut writer = io::BufWriter::new(file);
             for line in &lines {
-                if writer.write_all(line.as_bytes()).is_err()
-                    || writer.write_all(b"\r\n").is_err()
+                if writer.write_all(line.as_bytes()).is_err() || writer.write_all(b"\r\n").is_err()
                 {
                     return ExitCode::from(1);
                 }
@@ -158,8 +155,7 @@ fn main() -> ExitCode {
             let stdout = io::stdout();
             let mut writer = io::BufWriter::new(stdout.lock());
             for line in &lines {
-                if writer.write_all(line.as_bytes()).is_err()
-                    || writer.write_all(b"\r\n").is_err()
+                if writer.write_all(line.as_bytes()).is_err() || writer.write_all(b"\r\n").is_err()
                 {
                     return ExitCode::from(1);
                 }

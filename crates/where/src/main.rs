@@ -49,11 +49,17 @@ fn main() -> ExitCode {
     let parsed = match parse(&raw, FLAGS, Unknown::Error) {
         Ok(p) => p,
         Err(Error::Unknown(a) | Error::UnexpectedValue(a)) => {
-            eprintln!("ERROR: Invalid switch -{}.", a.trim_start_matches(['/', '-']));
+            eprintln!(
+                "ERROR: Invalid switch -{}.",
+                a.trim_start_matches(['/', '-'])
+            );
             return ExitCode::from(2);
         }
         Err(Error::MissingValue(a)) => {
-            eprintln!("ERROR: /{} requires a directory.", a.trim_start_matches(['/', '-']));
+            eprintln!(
+                "ERROR: /{} requires a directory.",
+                a.trim_start_matches(['/', '-'])
+            );
             return ExitCode::from(2);
         }
     };
@@ -212,7 +218,13 @@ fn wild_match_bytes(p: &[u8], n: &[u8]) -> bool {
 }
 
 /// 递归搜索（/R）
-fn walk(dir: &Path, pattern: &str, pathext: &[String], found: &mut Vec<PathBuf>, errors: &mut usize) {
+fn walk(
+    dir: &Path,
+    pattern: &str,
+    pathext: &[String],
+    found: &mut Vec<PathBuf>,
+    errors: &mut usize,
+) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => {
@@ -285,7 +297,7 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
 }
 
 fn is_leap(y: u64) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+    (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400)
 }
 
 fn month_days(y: u64, m: u64) -> u64 {

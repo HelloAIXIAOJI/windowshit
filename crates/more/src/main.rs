@@ -159,7 +159,7 @@ fn main() -> ExitCode {
         shown += 1;
 
         // 分页暂停：只在 stdout 是终端且还有更多内容时
-        if stdout_terminal && shown % PAGE_LINES == 0 {
+        if stdout_terminal && shown.is_multiple_of(PAGE_LINES) {
             let remaining = lines.len();
             if shown < remaining {
                 let _ = write!(stdout, "-- More -- ");

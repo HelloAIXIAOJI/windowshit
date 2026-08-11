@@ -38,7 +38,11 @@ fn parse_args(raw: &[String], i18n: &L10n) -> Result<Args, String> {
     while i < raw.len() {
         let arg = &raw[i];
         if let Some(opt) = arg.strip_prefix('-') {
-            let (flag, rest) = if opt.len() > 1 { opt.split_at(1) } else { (opt, "") };
+            let (flag, rest) = if opt.len() > 1 {
+                opt.split_at(1)
+            } else {
+                (opt, "")
+            };
             let inline: Option<&str> = if rest.is_empty() { None } else { Some(rest) };
 
             // 未实现的选项：明确报错
