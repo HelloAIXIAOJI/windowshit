@@ -65,6 +65,57 @@ pub fn fmt_now_num() -> String {
     format!("{y:04}/{m:02}/{d:02} {hh:02}:{mi:02}:{ss:02}")
 }
 
+/// 日志文件时间格式（实测原版）：`2026811 23:30:49`（年/月/日无分隔无前导零，时分秒有）。
+pub fn fmt_now_log() -> String {
+    if let Some((y, m, d, hh, mi, ss)) = now_local_parts() {
+        return format!("{y}{m}{d} {hh:02}:{mi:02}:{ss:02}");
+    }
+    let secs = now_secs();
+    let days = secs / 86400;
+    let (y, m, d) = days_to_ymd(days);
+    let rem = secs % 86400;
+    let hh = rem / 3600;
+    let mi = (rem % 3600) / 60;
+    let ss = rem % 60;
+    format!("{y}{m}{d} {hh:02}:{mi:02}:{ss:02}")
+}
+
+/// UNIX 秒 → UTC `YYYY/MM/DD HH:MM:SS`（/TS 时间戳用，原版显示 UTC）。
+pub fn fmt_utc(secs: u64) -> String {
+    let days = secs / 86400;
+    let (y, m, d) = days_to_ymd(days);
+    let rem = secs % 86400;
+    let hh = rem / 3600;
+    let mi = (rem % 3600) / 60;
+    let ss = rem % 60;
+    format!("{y:04}/{m:02}/{d:02} {hh:02}:{mi:02}:{ss:02}")
+}
+
+/// 当前本地时间 `HH:MM`（/ETA 起始时间）。
+pub fn fmt_now_hm() -> String {
+    if let Some((_, _, _, hh, mi, _)) = now_local_parts() {
+        return format!("{hh:02}:{mi:02}");
+    }
+    let secs = now_secs();
+    let rem = secs % 86400;
+    let hh = rem / 3600;
+    let mi = (rem % 3600) / 60;
+    format!("{hh:02}:{mi:02}")
+}
+
+/// 当前本地时间 + `secs` 秒 → `HH:MM`（/ETA 预计完成时间，近似）。
+pub fn fmt_hm_after(secs: u64) -> String {
+    let base = if let Some((_, _, _, hh, mi, ss)) = now_local_parts() {
+        hh * 3600 + mi * 60 + ss + secs
+    } else {
+        (now_secs() % 86400) + secs
+    };
+    let t = base % 86400;
+    let hh = t / 3600;
+    let mi = (t % 3600) / 60;
+    format!("{hh:02}:{mi:02}")
+}
+
 /// 从 UNIX 天数转换日期。
 fn days_to_ymd(days: u64) -> (u64, u64, u64) {
     let mut y = 1970u64;

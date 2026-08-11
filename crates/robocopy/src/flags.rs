@@ -1,5 +1,6 @@
 //! 开关表、分类枚举、选项与统计结构。
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use windowshit_args::{Flag, Kind};
@@ -122,7 +123,7 @@ pub enum Class {
 }
 
 impl Class {
-    /// 状态行分类标签（原版固定格式）。
+    /// 状态行分类标签（原版固定格式，大写）。
     pub fn label(self) -> &'static str {
         match self {
             Class::New => "New File",
@@ -131,6 +132,20 @@ impl Class {
             Class::Same => "Same",
             Class::Tweaked => "Tweaked",
             Class::Changed => "Changed",
+            Class::Extra => "*EXTRA File",
+            Class::Mismatch => "*MISMATCH File",
+        }
+    }
+
+    /// /V skipped 行的小写分类标签（实测原版：小写右对齐）。
+    pub fn lower(self) -> &'static str {
+        match self {
+            Class::New => "new file",
+            Class::Newer => "newer",
+            Class::Older => "older",
+            Class::Same => "same",
+            Class::Tweaked => "tweaked",
+            Class::Changed => "changed",
             Class::Extra => "*EXTRA File",
             Class::Mismatch => "*MISMATCH File",
         }
@@ -184,6 +199,14 @@ pub struct Options {
     pub exclude_junction: bool,     // /XJ
     pub exclude_junction_file: bool, // /XJF
     pub exclude_junction_dir: bool,  // /XJD
+    // 阶段 3：日志与输出控制
+    pub show_ts: bool,   // /TS：文件行显示 UTC 时间戳
+    pub full_path: bool, // /FP：文件行显示完整源路径
+    pub show_bytes: bool, // /BYTES：Options 回显
+    pub eta: bool,        // /ETA：文件行尾显示预计完成时间
+    pub log_path: Option<PathBuf>, // /LOG:file 或 /LOG+:file
+    pub log_append: bool,          // /LOG+ 追加
+    pub tee: bool,                 // /TEE 双输出
 }
 
 impl Default for Options {
@@ -232,6 +255,13 @@ impl Default for Options {
             exclude_junction: false,
             exclude_junction_file: false,
             exclude_junction_dir: false,
+            show_ts: false,
+            full_path: false,
+            show_bytes: false,
+            eta: false,
+            log_path: None,
+            log_append: false,
+            tee: false,
         }
     }
 }

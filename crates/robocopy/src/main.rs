@@ -11,11 +11,13 @@
 mod copy;
 mod flags;
 mod report;
+mod sink;
 mod time;
 mod util;
 
 use std::env;
 use std::fs;
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
@@ -113,6 +115,18 @@ fn build_opts(parsed: &Parsed, mt: Option<usize>, xf: Vec<String>, xd: Vec<Strin
         exclude_junction: parsed.flags.contains_key("XJ"),
         exclude_junction_file: parsed.flags.contains_key("XJF"),
         exclude_junction_dir: parsed.flags.contains_key("XJD"),
+        show_ts: parsed.flags.contains_key("TS"),
+        full_path: parsed.flags.contains_key("FP"),
+        show_bytes: parsed.flags.contains_key("BYTES"),
+        eta: parsed.flags.contains_key("ETA"),
+        log_path: parsed
+            .flags
+            .get("LOG")
+            .or_else(|| parsed.flags.get("LOG+"))
+            .and_then(|v| *v)
+            .map(|s| PathBuf::from(s)),
+        log_append: parsed.flags.contains_key("LOG+"),
+        tee: parsed.flags.contains_key("TEE"),
     }
 }
 
@@ -227,6 +241,16 @@ fn main() -> ExitCode {
 
     let mut opts = build_opts(&parsed, mt, xf, xd);
 
+    // 初始化日志输出目标（/LOG /LOG+ /TEE）
+    if let Some(log_path) = &opts.log_path {
+        sink::init(Some((log_path.clone(), opts.log_append)), opts.tee);
+        let abs = fs::canonicalize(log_path).unwrap_or_else(|_| log_path.clone());
+        let path_str = abs.to_string_lossy().replace('/', "\\");
+        sink::announce_log_file(&path_str);
+    } else {
+        sink::init(None, false);
+    }
+
     // 位置参数：source destination [file...]
     let mut paths = parsed.paths.iter();
     let src_raw = paths.next();
@@ -300,7 +324,17 @@ fn main() -> ExitCode {
         }
     }
 
-    copy::walk(&src, &dst, &opts, &mut stats, &mut rc, !dst_existed, 1);
+    let mut eta_state = copy::EtaState { copied: 0 };
+    copy::walk(
+        &src,
+        &dst,
+        &opts,
+        &mut stats,
+        &mut rc,
+        !dst_existed,
+        1,
+        if opts.eta { Some(&mut eta_state) } else { None },
+    );
 
     if !opts.no_job_summary {
         crate::outln!("\r\n------------------------------------------------------------------------------\r\n");

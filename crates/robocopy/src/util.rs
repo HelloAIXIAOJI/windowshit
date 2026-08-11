@@ -119,9 +119,10 @@ pub fn thousands_decimal(x: f64, precision: usize) -> String {
     }
 }
 
-/// 文件大小格式化（文件状态行用）：<1024 字节数，否则 `{:.1} {unit}`（小写 k/m/g/t）。
+/// 文件大小格式化（文件状态行用，实测 2026-08-11）：
+/// <1 MiB 显示字节数；≥1 MiB 显示 `{:.1} {unit}`（1 位小数，小写 k/m/g/t）。
 pub fn fmt_bytes(n: u64) -> String {
-    if n < 1024 {
+    if n < 1024 * 1024 {
         n.to_string()
     } else {
         let units = ["k", "m", "g", "t"];
@@ -136,19 +137,22 @@ pub fn fmt_bytes(n: u64) -> String {
     }
 }
 
-/// 文件大小格式化（summary 统计表用）：<1024 字节数，否则 `{:.2} {unit}`。
+/// 文件大小格式化（summary 统计表用，实测 2026-08-11）：
+/// <1 KiB 字节数；<1 MiB `{:.1} k`；≥1 MiB `{:.2} m/g/t`。
 pub fn fmt_bytes_sum(n: u64) -> String {
     if n < 1024 {
         n.to_string()
+    } else if n < 1024 * 1024 {
+        format!("{:.1} k", n as f64 / 1024.0)
     } else {
-        let units = ["k", "m", "g", "t"];
-        let mut v = n as f64;
+        let units = ["m", "g", "t"];
+        let mut v = n as f64 / 1024.0;
         let mut u = 0;
-        while v >= 1024.0 && u < units.len() {
+        while v >= 1024.0 && u < units.len() - 1 {
             v /= 1024.0;
             u += 1;
         }
-        format!("{v:.2} {}", units[u.saturating_sub(1)])
+        format!("{v:.2} {}", units[u])
     }
 }
 

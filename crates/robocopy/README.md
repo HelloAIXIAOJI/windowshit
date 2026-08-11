@@ -35,6 +35,11 @@ ROBOCOPY source destination [file [file]...] [options]
 | `/A` `/M` | 归档位过滤 / 复制并清除归档位 |
 | `/IA:attrs` `/XA:attrs` | 按属性包含 / 排除 |
 | `/XJ` `/XJF` `/XJD` | 排除 junction / junction 文件 / junction 目录 |
+| `/V` | 详细输出（显示 skipped 文件，小写分类） |
+| `/TS` `/FP` `/BYTES` | 文件行时间戳 / 完整路径 / Options 回显 |
+| `/ETA` | 文件行尾显示预计完成时间 |
+| `/LOG:file` `/LOG+:file` | 写日志文件 / 追加 |
+| `/TEE` | 控制台 + 日志双输出 |
 | `/?` | 显示帮助 |
 
 ## 还原的原版行为
@@ -51,11 +56,14 @@ ROBOCOPY source destination [file [file]...] [options]
 - `/COPY:DAT` 语义：复制后目标 mtime 与属性 = 源；覆盖只读目标前先清除只读位（原版行为）
 - 重定向时进度：文件状态行后接 `\r100%  ` 独立进度行（无 `/NP` 时）
 - TTY 动态进度：逐块（1MiB）复制时 `\r` 覆盖式刷新百分比（`3.1%`…`100%`，一位小数）
-- 文件大小显示：<1024 字节数右对齐 8，否则 `32.0 m`（小写 k/m/g/t）；summary Bytes 列用两位小数 `32.00 m`
+- 文件大小显示（实测 2026-08-11）：文件行 `<1 MiB` 字节数右对齐 8、`≥1 MiB` 用 `{:.1} m`；summary Bytes 列 `<1 KiB` 字节数、`<1 MiB` 用 `{:.1} k`、`≥1 MiB` 用 `{:.2} m`
 - Speed 行：`Bytes/sec.` 千位分隔整数、`MegaBytes/min.` 千位分隔三位小数，数字右对齐 23
 - `/XF` `/XD` 在 Header 有独立行：`Exc Files :` / `Exc Dirs :`
 - 文件选择在**分类前**过滤（排除的文件不计入复制但计入目录行数字）
 - `/XJ` 排除 junction（Rust std 在 Windows 对 junction 的 `is_dir()` 返回 false，需用 reparse point 位判断）
+- `/TS`：文件行大小后显示源文件 UTC 时间戳 `YYYY/MM/DD HH:MM:SS`；`/FP` 显示源完整路径；`/V` 的 skipped 行小写分类右对齐 14 宽（`          same`）
+- `/LOG:file`：stdout 只输出 ` Log File : path`，完整输出写入日志（`Started`/`Ended` 用数字格式 `2026811 23:30:49`，不随 locale）；`/LOG+` 追加；`/TEE` 控制台与日志双写
+- `/ETA`：文件行尾 `\t\tHH:MM -> HH:MM`（非首个复制文件显示，预计时间基于保守速率估算）
 
 ## 与真原版的已知差异
 
@@ -66,6 +74,9 @@ ROBOCOPY source destination [file [file]...] [options]
 | `/MAXAGE` 等时间过滤精度 | 按天取整（原版精确到日），未做 `/FFT` FAT 时间补偿 |
 | Unix 属性 | `/IA` `/XA` 仅支持 R（只读）；Windows 支持全部属性字母 |
 | `/MAXLAD` `/MINLAD` | 已实现；Windows 下最后访问时间更新策略与 NTFS 相关，极端场景可能有差异 |
+| `/ETA` 预计时间 | 基于固定保守速率（500 B/s）估算，实测原版跨度约 2-4 分钟，可能有 1 分钟误差 |
+| 日志文件时间格式 | 已对齐 `2026811 23:30:49`（无分隔月日）；Unix 平台退化为 UTC |
+| `/UNILOG` `/UNICODE` | 未实现（Unicode 日志） |
 
 ## 平台注意
 

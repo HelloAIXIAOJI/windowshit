@@ -390,6 +390,11 @@ fn copy_with_retry(src: &Path, dst: &Path, opts: &Options, animate: bool) -> io:
     unreachable!()
 }
 
+/// /ETA 状态（近似实现）。
+pub struct EtaState {
+    pub copied: u32,
+}
+
 /// 递归遍历 src 目录。`new_dir`：目标目录为本次新建（显示 `New Dir`）。
 /// `level`：当前层级（根=1），用于 /LEV 限制。`rc` 累积退出码标志。
 pub fn walk(
@@ -400,6 +405,7 @@ pub fn walk(
     rc: &mut u32,
     new_dir: bool,
     level: u32,
+    mut eta: Option<&mut EtaState>,
 ) {
     let entries = match fs::read_dir(src) {
         Ok(e) => e,
@@ -433,7 +439,7 @@ pub fn walk(
 
     // 第一遍：分类文件，统计本目录匹配的文件数（供目录行数字，含 /XF /MAX 等排除项）
     let mut matched_count: u64 = 0;
-    let mut plan: Vec<(PathBuf, Class)> = Vec::new();
+    let mut plan: Vec<(PathBuf, Class, Option<u64>)> = Vec::new();
     for f in &files {
         let name = f.file_name().unwrap_or_default().to_string_lossy();
         if !matches_pattern(&name, &opts.files) {
@@ -454,7 +460,13 @@ pub fn walk(
         }
         let dst_file = dst.join(f.file_name().unwrap());
         let class = classify(f, &dst_file, opts);
-        plan.push((f.clone(), class));
+        // /TS：源文件 mtime（UTC 秒）
+        let ts = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs());
+        plan.push((f.clone(), class, ts));
     }
 
     // 目录状态行（数字 = 该目录匹配的文件数，与分类字段间无 tab）
@@ -468,33 +480,54 @@ pub fn walk(
     }
 
     // 第二遍：按分类执行
-    for (f, class) in &plan {
+    for (f, class, ts) in &plan {
         let name = f.file_name().unwrap_or_default().to_string_lossy();
+        // /FP：显示源完整路径（实测原版格式 `f:\...\src\a.txt`）
+        let display_name = if opts.full_path {
+            f.to_string_lossy().replace('/', "\\")
+        } else {
+            name.to_string()
+        };
         let sz = f.metadata().map(|m| m.len()).unwrap_or(0);
         let dst_file = dst.join(f.file_name().unwrap());
+        // /TS 仅在 opts.show_ts 时传（否则任何场景都不显示时间戳）
+        let ts_arg = if opts.show_ts { *ts } else { None };
         match class_action(*class, opts) {
             Action::Copy => {
                 stats.file(TOT, 1, sz);
                 if opts.list_only {
                     stats.file(COP, 1, sz);
                     *rc |= 1;
-                    output_file_line(*class, sz, &name, opts, false);
+                    output_file_line(*class, sz, &display_name, ts_arg, opts, false, None);
                     continue;
                 }
                 // 是否动画进度：TTY 且未关进度、未关文件列表
                 let animate = !opts.no_progress && !opts.no_file_list && io::stdout().is_terminal();
                 if animate {
                     // 文件行先不带换行打印，复制过程动态刷新百分比
-                    crate::out!("\t{}\t\t{}\t{}", crate::report::field_str(*class, opts), crate::report::sz_str(sz, opts), name);
+                    crate::out!("\t{}\t\t{}\t{}", crate::report::field_str(*class, opts), crate::report::sz_str(sz, opts), display_name);
                 }
                 if copy_with_retry(f, &dst_file, opts, animate).is_ok() {
                     stats.file(COP, 1, sz);
                     *rc |= 1;
+                    // /ETA 近似：非首个复制文件显示 `\t\tHH:MM -> HH:MM`（固定保守速率 500 B/s）
+                    let mut eta_str: Option<String> = None;
+                    if opts.eta {
+                        if let Some(e) = eta.as_deref_mut() {
+                            e.copied += 1;
+                            if e.copied > 1 {
+                                let now = crate::time::fmt_now_hm();
+                                let eta_t = crate::time::fmt_hm_after(sz / 500);
+                                eta_str = Some(format!("{now} -> {eta_t}"));
+                            }
+                        }
+                    }
+                    let eta_part = eta_str.as_ref().map(|e| format!("\t\t{e}")).unwrap_or_default();
                     if animate {
-                        crate::out!("\r100%  \r\n");
+                        crate::out!("\r100%  {eta_part}\r\n");
                     } else {
-                        // 非 TTY：一次性进度行（对齐原版重定向字节 `name\r100%  \r\n`）
-                        output_file_line(*class, sz, &name, opts, !opts.no_progress && !opts.no_file_list);
+                        // 非 TTY：一次性进度行（对齐原版重定向字节 `name[ \t\tETA]\r100%  \r\n`）
+                        output_file_line(*class, sz, &display_name, ts_arg, opts, !opts.no_progress && !opts.no_file_list, eta_str.as_deref());
                     }
                 } else {
                     stats.file(FAI, 1, sz);
@@ -502,7 +535,7 @@ pub fn walk(
                     if animate {
                         crate::out!("\r\n"); // 失败补换行
                     } else {
-                        output_file_line(*class, sz, &name, opts, false);
+                        output_file_line(*class, sz, &display_name, ts_arg, opts, false, None);
                     }
                 }
                 // /M：复制并清除源归档位
@@ -517,14 +550,14 @@ pub fn walk(
             Action::Skip => {
                 stats.file(TOT, 1, sz);
                 if opts.verbose {
-                    output_file_line(*class, sz, &name, opts, false);
+                    crate::report::output_skipped_line(*class, sz, &display_name, ts_arg, opts);
                 }
             }
             Action::Mismatch => {
                 stats.file(TOT, 1, sz);
                 stats.file(MIS, 1, sz);
                 *rc |= 4;
-                output_file_line(Class::Mismatch, sz, &name, opts, false);
+                output_file_line(Class::Mismatch, sz, &display_name, ts_arg, opts, false, None);
             }
         }
     }
@@ -619,6 +652,6 @@ pub fn walk(
             }
         }
         // /L 不创建目录，但目录在目标中不存在仍算 New Dir
-        walk(d, &dst_dir, opts, stats, rc, !dst_dir_existed, level + 1);
+        walk(d, &dst_dir, opts, stats, rc, !dst_dir_existed, level + 1, eta.as_deref_mut());
     }
 }
