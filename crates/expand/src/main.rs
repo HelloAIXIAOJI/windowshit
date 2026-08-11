@@ -22,8 +22,8 @@ use std::process::ExitCode;
 
 use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 
-const BANNER: &str = "Microsoft (R) File Expansion Utility\r\n\
-Copyright (c) Microsoft Corporation. All rights reserved.";
+const BANNER: &str = "Windowshit (R) File Expansion Utility\r\n\
+Copyright (c) Windowshit. All rights reserved.";
 
 const HELP: &str = "Expands one or more compressed files.
 
