@@ -1,0 +1,69 @@
+name: Full Build Check (Manual)
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  full-build:
+    name: Full Release Build (${{ matrix.artifact }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64-unknown-linux-gnu
+            artifact: linux-x86_64
+            build: cargo
+          - os: windows-latest
+            arch: x86_64-pc-windows-msvc
+            artifact: windows-x86_64
+            build: cargo
+          - os: macos-latest
+            arch: x86_64-apple-darwin
+            artifact: macos-x86_64
+            build: cargo
+          - os: ubuntu-latest
+            arch: aarch64-unknown-linux-gnu
+            artifact: linux-aarch64
+            build: zigbuild
+          - os: ubuntu-latest
+            arch: aarch64-pc-windows-msvc
+            artifact: windows-aarch64
+            build: zigbuild
+          - os: macos-latest
+            arch: aarch64-apple-darwin
+            artifact: macos-aarch64
+            build: cargo
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch }}
+
+      - name: Install zig + cargo-zigbuild
+        if: matrix.build == 'zigbuild'
+        uses: goto-bus-stop/setup-zig@v2
+
+      - name: Install cargo-zigbuild
+        if: matrix.build == 'zigbuild'
+        run: cargo install cargo-zigbuild --locked
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Full release build (cargo)
+        if: matrix.build == 'cargo'
+        run: cargo build --workspace --release --bins
+        env:
+          CARGO_BUILD_TARGET: ${{ matrix.arch }}
+
+      - name: Full release build (zigbuild)
+        if: matrix.build == 'zigbuild'
+        run: cargo zigbuild --workspace --release --bins --target ${{ matrix.arch }}

@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  release:
+    types: [ created ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build & attach (${{ matrix.artifact }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64-unknown-linux-gnu
+            suffix: ""
+            artifact: linux-x86_64
+            build: cargo
+          - os: windows-latest
+            arch: x86_64-pc-windows-msvc
+            suffix: ".exe"
+            artifact: windows-x86_64
+            build: cargo
+          - os: macos-latest
+            arch: x86_64-apple-darwin
+            suffix: ""
+            artifact: macos-x86_64
+            build: cargo
+          - os: ubuntu-latest
+            arch: aarch64-unknown-linux-gnu
+            suffix: ""
+            artifact: linux-aarch64
+            build: zigbuild
+          - os: ubuntu-latest
+            arch: aarch64-pc-windows-msvc
+            suffix: ".exe"
+            artifact: windows-aarch64
+            build: zigbuild
+          - os: macos-latest
+            arch: aarch64-apple-darwin
+            suffix: ""
+            artifact: macos-aarch64
+            build: cargo
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch }}
+
+      - name: Install zig
+        if: matrix.build == 'zigbuild'
+        uses: goto-bus-stop/setup-zig@v2
+
+      - name: Install cargo-zigbuild
+        if: matrix.build == 'zigbuild'
+        run: cargo install cargo-zigbuild --locked
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build all bins (release, cargo)
+        if: matrix.build == 'cargo'
+        run: cargo build --workspace --release --bins
+        env:
+          CARGO_BUILD_TARGET: ${{ matrix.arch }}
+
+      - name: Build all bins (release, zigbuild)
+        if: matrix.build == 'zigbuild'
+        run: cargo zigbuild --workspace --release --bins --target ${{ matrix.arch }}
+
+      - name: Collect binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          BINS="ping ipconfig tracert pathping whoami hostname ver where tree findstr getmac type sort more clip tasklist taskkill systeminfo fc choice replace expand makecab shutdown robocopy"
+          for b in $BINS; do
+            src="target/${{ matrix.arch }}/release/${b}${{ matrix.suffix }}"
+            if [ -f "$src" ]; then
+              cp "$src" "dist/${b}${{ matrix.suffix }}"
+            else
+              echo "WARNING: missing binary $src" >&2
+            fi
+          done
+          cd dist
+          tar -czf "../windowshit-${{ matrix.artifact }}.tar.gz" *
+          cd ..
+          ls -la
+
+      - name: Upload binaries to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: windowshit-${{ matrix.artifact }}.tar.gz
+          generate_release_notes: false
