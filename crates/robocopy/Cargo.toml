@@ -11,3 +11,6 @@ path = "src/main.rs"
 
 [dependencies]
 windowshit-args = { path = "../args" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_System_SystemInformation", "Win32_Storage_FileSystem", "Win32_Foundation"] }

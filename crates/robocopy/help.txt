@@ -25,7 +25,7 @@
   /COPY:copyflag[s] :: what to COPY for files (default is /COPY:DAT).
                        (copyflags : D=Data, A=Attributes, T=Timestamps, X=Skip alt data streams (X ignored if /B or /ZB).
                        (S=Security=NTFS ACLs, O=Owner info, U=aUditing info).
- 
+
  
                /SEC :: copy files with SECurity (equivalent to /COPY:DATS).
            /COPYALL :: COPY ALL file info (equivalent to /COPY:DATSOU).
@@ -167,7 +167,7 @@
 ::
        /JOB:jobname :: take parameters from the named JOB file.
       /SAVE:jobname :: SAVE parameters to the named job file
-              /QUIT :: QUIT after processing command line (to view parameters).
+              /QUIT :: QUIT after processing command line (to view parameters). 
               /NOSD :: NO Source Directory is specified.
               /NODD :: NO Destination Directory is specified.
                 /IF :: Include the following Files.
@@ -175,37 +175,37 @@
 ::
 :: Remarks :
 ::
-       Using /PURGE or /MIR on the root directory of the volume formerly caused
-       robocopy to apply the requested operation on files inside the System
-       Volume Information directory as well. This is no longer the case; if
-       either is specified, robocopy will skip any files or directories with that
+       Using /PURGE or /MIR on the root directory of the volume formerly caused 
+       robocopy to apply the requested operation on files inside the System 
+       Volume Information directory as well. This is no longer the case; if 
+       either is specified, robocopy will skip any files or directories with that 
        name in the top-level source and destination directories of the copy session.
 
-       The modified files classification applies only when both source
-       and destination filesystems support change timestamps (e.g., NTFS)
-       and the source and destination files have different change times but are
-       otherwise the same. These files are not copied by default; specify /IM
+       The modified files classification applies only when both source 
+       and destination filesystems support change timestamps (e.g., NTFS) 
+       and the source and destination files have different change times but are 
+       otherwise the same. These files are not copied by default; specify /IM 
        to include them.
 
-       The /DCOPY:E flag requests that extended attribute copying should be
-       attempted for directories. Note that currently robocopy will continue
-       if a directory's EAs could not be copied. This flag is also not included
+       The /DCOPY:E flag requests that extended attribute copying should be 
+       attempted for directories. Note that currently robocopy will continue 
+       if a directory's EAs could not be copied. This flag is also not included 
        in /COPYALL.
 
-       If either /IoMaxSize or /IoRate are specified, robocopy will enable
-       copy file throttling (the purpose being to reduce system load).
-       Both may be adjusted to allowable or optimal values; i.e., both
-       specify desired copy parameters, but the system and robocopy are
-       allowed to adjust them to reasonable/allowed values as necessary.
-       If /Threshold is also used, it specifies a minimum file size for
-       engaging throttling; files below that size will not be throttled.
-       Values for all three parameters may be followed by an optional suffix
+       If either /IoMaxSize or /IoRate are specified, robocopy will enable 
+       copy file throttling (the purpose being to reduce system load). 
+       Both may be adjusted to allowable or optimal values; i.e., both 
+       specify desired copy parameters, but the system and robocopy are 
+       allowed to adjust them to reasonable/allowed values as necessary. 
+       If /Threshold is also used, it specifies a minimum file size for 
+       engaging throttling; files below that size will not be throttled. 
+       Values for all three parameters may be followed by an optional suffix 
        character from the set [KMG] (kilo, mega, giga).
 
-       Using /LFSM requests robocopy to operate in 'low free space mode'.
-       In this mode, robocopy will pause whenever a file copy would cause the
-       destination volume's free space to go below a 'floor' value, which
-       can be explicitly specified by the LFSM:n[KMG] form of the flag.
-       If /LFSM is specified with no explicit floor value, the floor is set to
-       ten percent of the destination volume's size.
+       Using /LFSM requests robocopy to operate in 'low free space mode'. 
+       In this mode, robocopy will pause whenever a file copy would cause the 
+       destination volume's free space to go below a 'floor' value, which 
+       can be explicitly specified by the LFSM:n[KMG] form of the flag. 
+       If /LFSM is specified with no explicit floor value, the floor is set to 
+       ten percent of the destination volume's size. 
        Low free space mode is incompatible with /MT and /EFSRAW.

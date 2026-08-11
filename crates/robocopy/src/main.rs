@@ -27,9 +27,27 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 
+/// 输出一行（行尾 CRLF，对齐原版重定向输出）。
+macro_rules! outln {
+    ($($t:tt)*) => {{
+        use std::io::Write as _;
+        let mut o = std::io::stdout();
+        let _ = write!(o, $($t)*);
+        let _ = o.write_all(b"\r\n");
+    }};
+}
+
+/// 原样输出（不追加换行）。
+macro_rules! out {
+    ($($t:tt)*) => {{
+        use std::io::Write as _;
+        let _ = write!(std::io::stdout(), $($t)*);
+    }};
+}
+
 const HELP: &str = include_str!("../help.txt");
 
-const USAGE_HEAD: &str = "       Simple Usage :: ROBOCOPY source destination /MIR\n\n             source :: Source Directory (drive:\\path or \\\\server\\share\\path).\n        destination :: Destination Dir  (drive:\\path or \\\\server\\share\\path).\n               /MIR :: Mirror a complete directory tree.\n\n    For more usage information run ROBOCOPY /?\n\n";
+const USAGE_HEAD: &str = "       Simple Usage :: ROBOCOPY source destination /MIR\r\n\r\n             source :: Source Directory (drive:\\path or \\\\server\\share\\path).\r\n        destination :: Destination Dir  (drive:\\path or \\\\server\\share\\path).\r\n               /MIR :: Mirror a complete directory tree.\r\n\r\n    For more usage information run ROBOCOPY /?\r\n\r\n";
 
 /// 开关表：阶段 1 实现的收 `Flag`/`Value`，暂不实现的收 `Ignore`（原版存在但本实现不处理）。
 const FLAGS: &[Flag] = &[
@@ -185,6 +203,8 @@ struct Options {
     no_class: bool,      // /NC
     no_job_header: bool, // /NJH
     no_job_summary: bool, // /NJS
+    include_same: bool,     // /IS：Same 文件也复制
+    include_tweaked: bool,  // /IT：Tweaked 文件也复制
 }
 
 /// 统计列索引。
@@ -215,7 +235,7 @@ fn main() -> ExitCode {
     let raw: Vec<String> = env::args().skip(1).collect();
 
     if raw.iter().any(|a| a == "/?" || a == "-?") {
-        print!("\r\n{HELP}");
+        out!("\r\n{HELP}");
         // 原版 /? 也返回 16（严重错误）
         return ExitCode::from(16);
     }
@@ -258,7 +278,7 @@ fn main() -> ExitCode {
     if src_raw.is_none() {
         // 无参数：Header + Simple Usage
         if !opts.no_job_header {
-            print!("\r\n");
+            out!("\r\n");
             print_header_with(None, None, &[], &opts, true);
         }
         print_usage();
@@ -270,11 +290,11 @@ fn main() -> ExitCode {
     // 缺 destination
     if dst_raw.is_none() {
         if !opts.no_job_header {
-            print!("\r\n");
+            out!("\r\n");
             print_header_with(Some(&src), None, &files, &opts, false);
-            println!("\r\n------------------------------------------------------------------------------\r\n");
+            outln!("\r\n------------------------------------------------------------------------------\r\n");
         }
-        println!("ERROR : No Destination Directory Specified.\r\n");
+        outln!("ERROR : No Destination Directory Specified.\r\n");
         print_usage();
         return ExitCode::from(16);
     }
@@ -283,17 +303,16 @@ fn main() -> ExitCode {
 
     // 正常流程
     if !opts.no_job_header {
-        print!("\r\n");
+        out!("\r\n");
         print_header_with(Some(&src), Some(&dst), &files, &opts, false);
-        println!("\r\n------------------------------------------------------------------------------\r\n");
+        outln!("\r\n------------------------------------------------------------------------------\r\n");
     }
 
     // 源目录不可访问
     if !src.is_dir() {
         let (msg, code) = access_error(&src);
-        println!("{msg}");
-        println!("{code}");
-        println!();
+        outln!("{msg}");
+        outln!("{code}\r");
         return ExitCode::from(16);
     }
 
@@ -315,7 +334,7 @@ fn main() -> ExitCode {
     walk(&src, &dst, &opts, &mut stats, &mut rc, !dst_existed);
 
     if !opts.no_job_summary {
-        println!("\r\n------------------------------------------------------------------------------\r\n");
+        outln!("\r\n------------------------------------------------------------------------------\r\n");
         print_summary(&stats, start);
     }
 
@@ -360,6 +379,8 @@ fn build_opts(parsed: &Parsed, mt: Option<usize>) -> Options {
         no_class: parsed.flags.contains_key("NC"),
         no_job_header: parsed.flags.contains_key("NJH"),
         no_job_summary: parsed.flags.contains_key("NJS"),
+        include_same: parsed.flags.contains_key("IS"),
+        include_tweaked: parsed.flags.contains_key("IT"),
     }
 }
 
@@ -374,21 +395,21 @@ fn print_header_with(
     opts: &Options,
     simple: bool,
 ) {
-    println!("-------------------------------------------------------------------------------");
-    println!("{:<81}", "   ROBOCOPY     ::     Robust File Copy for Windows");
-    println!("-------------------------------------------------------------------------------");
-    println!("\r\n  Started : {}", fmt_now_cn());
+    outln!("-------------------------------------------------------------------------------");
+    outln!("{:<81}", "   ROBOCOPY     ::     Robust File Copy for Windows");
+    outln!("-------------------------------------------------------------------------------");
+    outln!("\r\n  Started : {}", fmt_now_cn());
     if !simple {
         if let Some(s) = src {
-            println!("{:>11} {}", "Source :", display_dir(s));
+            outln!("{:>11} {}", "Source :", display_dir(s));
         }
         match dst {
-            Some(d) => println!("{:>11} {}", "Dest :", display_dir(d)),
-            None => println!("{:>11} ", "Dest -"),
+            Some(d) => outln!("{:>11} {}", "Dest :", display_dir(d)),
+            None => outln!("{:>11} ", "Dest -"),
         }
-        println!("\r\n{:>11} {}", "Files :", files_mode(files));
-        println!("\t    ");
-        println!("{:>11} {} ", "Options :", options_line(files, opts));
+        outln!("\r\n{:>11} {}", "Files :", files_mode(files));
+        outln!("\t    ");
+        outln!("{:>11} {} ", "Options :", options_line(files, opts));
     }
 }
 
@@ -449,6 +470,12 @@ fn options_line(files: &[String], opts: &Options) -> String {
     if opts.no_progress {
         v.push("/NP".into());
     }
+    if opts.include_same {
+        v.push("/IS".into());
+    }
+    if opts.include_tweaked {
+        v.push("/IT".into());
+    }
     if let Some(mt) = opts.mt {
         v.push(format!("/MT:{mt}"));
     }
@@ -458,9 +485,9 @@ fn options_line(files: &[String], opts: &Options) -> String {
 }
 
 fn print_usage() {
-    print!("{USAGE_HEAD}");
-    println!("{}", " ".repeat(58));
-    println!("****  /MIR can DELETE files as well as copy them !");
+    out!("{USAGE_HEAD}");
+    outln!("{}", " ".repeat(58));
+    outln!("****  /MIR can DELETE files as well as copy them !");
 }
 
 // ---------------------------------------------------------------------------
@@ -514,7 +541,7 @@ fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut u32,
         } else {
             " ".repeat(19)
         };
-        println!("\t{field}{matched_count}\t{}", display_dir(src));
+        outln!("\t{field}{matched_count}\t{}", display_dir(src));
     }
 
     // 处理文件
@@ -528,14 +555,17 @@ fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut u32,
                 if opts.list_only {
                     stats.file(COP, 1, sz);
                     *rc |= 1;
+                    output_file_line(*class, sz, &name, opts, false);
                 } else if copy_with_retry(f, &dst_file, opts).is_ok() {
                     stats.file(COP, 1, sz);
                     *rc |= 1;
+                    // 实际复制：文件行后跟 `\r100%  `（无 /NP 时，对齐原版重定向字节）
+                    output_file_line(*class, sz, &name, opts, !opts.no_progress);
                 } else {
                     stats.file(FAI, 1, sz);
                     *rc |= 8;
+                    output_file_line(*class, sz, &name, opts, false);
                 }
-                output_file_line(*class, sz, &name, opts);
                 if (opts.move_files || opts.move_all) && !opts.list_only {
                     let _ = fs::remove_file(f);
                 }
@@ -543,14 +573,14 @@ fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut u32,
             Action::Skip => {
                 stats.file(TOT, 1, sz);
                 if opts.verbose {
-                    output_file_line(*class, sz, &name, opts);
+                    output_file_line(*class, sz, &name, opts, false);
                 }
             }
             Action::Mismatch => {
                 stats.file(TOT, 1, sz);
                 stats.file(MIS, 1, sz);
                 *rc |= 4;
-                output_file_line(Class::Mismatch, sz, &name, opts);
+                output_file_line(Class::Mismatch, sz, &name, opts, false);
             }
         }
     }
@@ -591,7 +621,7 @@ fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut u32,
                     stats.dir(EXT, 1);
                     *rc |= 2;
                     if !opts.no_dir_list {
-                        println!("\t{}\t{}", dir_class_field("*EXTRA Dir"), display_dir(ed));
+                        outln!("\t{}\t{}", dir_class_field("*EXTRA Dir"), display_dir(ed));
                     }
                 }
             }
@@ -662,16 +692,43 @@ fn classify(src_file: &Path, dst_file: &Path, opts: &Options) -> Class {
             let dst_sz = dst_meta.len();
             if src_sz != dst_sz {
                 Class::Changed
+            } else if !attrs_equal(src_file, dst_file) {
+                // 属性不同 → Tweaked（/IT 才复制）
+                Class::Tweaked
             } else {
-                // 属性不同 → Tweaked；阶段 1 仅比较只读位
-                let sro = src_meta.permissions().readonly();
-                let dro = dst_meta.permissions().readonly();
-                if sro != dro {
-                    Class::Tweaked
-                } else {
-                    Class::Same
-                }
+                Class::Same
             }
+        }
+    }
+}
+
+/// 属性比较：Windows 用 GetFileAttributesW 完整属性位，Unix 比较只读位。
+fn attrs_equal(src: &Path, dst: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        file_attrs(src) == file_attrs(dst)
+    }
+    #[cfg(not(windows))]
+    {
+        let s = fs::metadata(src).map(|m| m.permissions().readonly()).unwrap_or(false);
+        let d = fs::metadata(dst).map(|m| m.permissions().readonly()).unwrap_or(false);
+        s == d
+    }
+}
+
+/// Windows 文件属性（失败时返回 0，避免误判 Tweaked）。
+#[cfg(windows)]
+fn file_attrs(p: &Path) -> u32 {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::GetFileAttributesW;
+    let w: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    // SAFETY: 标准 API，缓冲区正确
+    unsafe {
+        let a = GetFileAttributesW(w.as_ptr());
+        if a == u32::MAX {
+            0
+        } else {
+            a
         }
     }
 }
@@ -683,25 +740,93 @@ enum Action {
     Mismatch,
 }
 
-fn class_action(class: Class, _opts: &Options) -> Action {
+fn class_action(class: Class, opts: &Options) -> Action {
     match class {
-        // 阶段 1：时间戳或大小不同 → 复制（/IT /IS 等包含开关留待阶段 2）
+        // 时间戳或大小不同 → 复制
         Class::New | Class::Newer | Class::Older | Class::Changed => Action::Copy,
+        // /IS：Same 也复制；/IT：Tweaked 也复制
+        Class::Same if opts.include_same => Action::Copy,
+        Class::Tweaked if opts.include_tweaked => Action::Copy,
         Class::Same | Class::Tweaked => Action::Skip,
         Class::Extra | Class::Mismatch => Action::Mismatch,
     }
 }
 
 /// 复制文件，带 /R /W 重试。
+/// 对齐原版 /COPY:DAT：复制前清除目标只读位（否则覆盖会失败且无限重试），
+/// 复制后设置目标 mtime 与属性 = 源（这样二次运行分类为 Same）。
 fn copy_with_retry(src: &Path, dst: &Path, opts: &Options) -> io::Result<()> {
     for i in 0..=opts.retries {
+        // 目标存在且只读时先清除只读位（原版行为）
+        clear_readonly(dst);
         match fs::copy(src, dst) {
-            Ok(_) => return Ok(()),
+            Ok(_) => {
+                // 还原源文件修改时间（原版行为：二次运行时间戳相同 → Same 跳过）
+                if let Ok(sm) = fs::metadata(src) {
+                    if let Ok(mt) = sm.modified() {
+                        let f = fs::File::options().write(true).open(dst)?;
+                        let _ = f.set_modified(mt);
+                    }
+                }
+                // 复制后属性 = 源属性（/COPY:DA 的 A 部分）
+                copy_attrs(src, dst);
+                return Ok(());
+            }
             Err(_e) if i < opts.retries => thread::sleep(opts.wait),
             Err(e) => return Err(e),
         }
     }
     unreachable!()
+}
+
+/// 清除目标文件只读位（若存在且只读）。
+fn clear_readonly(p: &Path) {
+    #[cfg(windows)]
+    {
+        let a = file_attrs(p);
+        if a & 0x1 != 0 {
+            set_file_attrs(p, a & !0x1);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(m) = fs::metadata(p) {
+            if m.permissions().readonly() {
+                let mut perms = m.permissions();
+                perms.set_readonly(false);
+                let _ = fs::set_permissions(p, perms);
+            }
+        }
+    }
+}
+
+/// 复制源文件属性到目标（仅当前实现可表示的位）。
+fn copy_attrs(src: &Path, dst: &Path) {
+    #[cfg(windows)]
+    {
+        let a = file_attrs(src);
+        if a != 0 {
+            set_file_attrs(dst, a);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(m) = fs::metadata(src) {
+            let _ = fs::set_permissions(dst, m.permissions());
+        }
+    }
+}
+
+/// 设置 Windows 文件属性。
+#[cfg(windows)]
+fn set_file_attrs(p: &Path, attrs: u32) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::SetFileAttributesW;
+    let w: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    // SAFETY: 标准 API，缓冲区正确
+    unsafe {
+        let _ = SetFileAttributesW(w.as_ptr(), attrs);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -722,7 +847,8 @@ fn dir_class_field(class: &str) -> String {
     format!("  {class:<17}")
 }
 
-fn output_file_line(class: Class, size: u64, name: &str, opts: &Options) {
+/// 文件状态行。`progress=true` 时模拟原版：文件行后 `\r` 回车再写 `100%  `（重定向到文件也是此字节）。
+fn output_file_line(class: Class, size: u64, name: &str, opts: &Options, progress: bool) {
     if opts.no_file_list {
         return;
     }
@@ -736,8 +862,12 @@ fn output_file_line(class: Class, size: u64, name: &str, opts: &Options) {
     } else {
         format!("{:>8}", size)
     };
-    let progress = if opts.no_progress { "" } else { "100%" };
-    println!("\t{field}\t\t{sz}\t{name}{progress}");
+    let line = format!("\t{field}\t\t{sz}\t{name}");
+    if progress {
+        out!("{line}\r100%  \r\n");
+    } else {
+        outln!("{line}");
+    }
 }
 
 fn output_extra_file_line(name: &str, size: u64, opts: &Options) {
@@ -754,7 +884,7 @@ fn output_extra_file_line(name: &str, size: u64, opts: &Options) {
     } else {
         format!("{:>8}", size)
     };
-    println!("\t{field}\t\t{sz}\t{name}");
+    outln!("\t{field}\t\t{sz}\t{name}");
 }
 
 // ---------------------------------------------------------------------------
@@ -762,7 +892,7 @@ fn output_extra_file_line(name: &str, size: u64, opts: &Options) {
 // ---------------------------------------------------------------------------
 
 fn print_summary(stats: &Stats, start: Instant) {
-    println!(
+    outln!(
         "{:>20}{:>10}{:>10}{:>10}{:>10}{:>10}",
         "Total", "Copied", "Skipped", "Mismatch", "FAILED", "Extras"
     );
@@ -772,15 +902,15 @@ fn print_summary(stats: &Stats, start: Instant) {
     let d_skip = d[TOT].saturating_sub(d[COP] + d[MIS] + d[FAI]);
     let f_skip = f[TOT].saturating_sub(f[COP] + f[MIS] + f[FAI]);
     let b_skip = b[TOT].saturating_sub(b[COP] + b[MIS] + b[FAI]);
-    println!(
+    outln!(
         "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
         "Dirs :", d[TOT], d[COP], d_skip, d[MIS], d[FAI], d[EXT]
     );
-    println!(
+    outln!(
         "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
         "Files :", f[TOT], f[COP], f_skip, f[MIS], f[FAI], f[EXT]
     );
-    println!(
+    outln!(
         "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
         "Bytes :",
         fmt_bytes(b[TOT]),
@@ -792,7 +922,7 @@ fn print_summary(stats: &Stats, start: Instant) {
     );
     let elapsed = start.elapsed().as_secs();
     // Times 行与其它行列宽一致（10），小时无前导零
-    println!(
+    outln!(
         "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
         "Times :",
         fmt_duration(elapsed),
@@ -808,11 +938,11 @@ fn print_summary(stats: &Stats, start: Instant) {
     if secs > 0.0 && copied_bytes > 0.0 {
         let bps = copied_bytes / secs;
         let mbpm = bps / 1048576.0 * 60.0;
-        println!("\r\n\r\n{:>10} {:>19} Bytes/sec.", "Speed :", thousands(bps.round() as u64));
-        println!("{:>10} {:>19.3} MegaBytes/min.", "Speed :", mbpm);
+        outln!("\r\n\r\n{:>10} {:>19} Bytes/sec.", "Speed :", thousands(bps.round() as u64));
+        outln!("{:>10} {:>19.3} MegaBytes/min.", "Speed :", mbpm);
     }
-    println!("{:>10} {}", "Ended :", fmt_now_cn());
-    println!();
+    outln!("{:>10} {}", "Ended :", fmt_now_cn());
+    outln!("");
 }
 
 /// 文件大小格式化：<1024 原样，否则 KB/MB/GB（一位小数）。
@@ -954,7 +1084,7 @@ fn access_error(src: &Path) -> (String, String) {
 }
 
 // ---------------------------------------------------------------------------
-// 时间（暂按 UTC，README 记录差异）
+// 时间（Windows 本地时间，其余平台 UTC）
 // ---------------------------------------------------------------------------
 
 fn now_secs() -> u64 {
@@ -964,8 +1094,37 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-/// `2026年8月11日 20:38:22`（Started/Ended 用，原版随 locale，暂按 UTC）。
+/// 本地时间各部分 (y, m, d, hh, mi, ss)。仅 Windows 取本地时间；其余平台返回 None（用 UTC）。
+fn now_local_parts() -> Option<(u64, u64, u64, u64, u64, u64)> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::SYSTEMTIME;
+        use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+        // SAFETY: 标准 API，缓冲区由系统填充
+        unsafe {
+            let mut st: SYSTEMTIME = std::mem::zeroed();
+            GetLocalTime(&mut st);
+            Some((
+                st.wYear as u64,
+                st.wMonth as u64,
+                st.wDay as u64,
+                st.wHour as u64,
+                st.wMinute as u64,
+                st.wSecond as u64,
+            ))
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+/// `2026年8月11日 20:38:22`（Started/Ended 用，原版随 locale）。
 fn fmt_now_cn() -> String {
+    if let Some((y, m, d, hh, mi, ss)) = now_local_parts() {
+        return format!("{y}年{m}月{d}日 {hh:02}:{mi:02}:{ss:02}");
+    }
     let secs = now_secs();
     let days = secs / 86400;
     let (y, m, d) = days_to_ymd(days);
@@ -978,6 +1137,9 @@ fn fmt_now_cn() -> String {
 
 /// `2026/08/11 20:36:32`（错误行用）。
 fn fmt_now_num() -> String {
+    if let Some((y, m, d, hh, mi, ss)) = now_local_parts() {
+        return format!("{y:04}/{m:02}/{d:02} {hh:02}:{mi:02}:{ss:02}");
+    }
     let secs = now_secs();
     let days = secs / 86400;
     let (y, m, d) = days_to_ymd(days);
