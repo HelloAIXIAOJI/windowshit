@@ -22,6 +22,7 @@
 | expand | 解压 CAB 压缩包 | 是 |
 | makecab | 制作 CAB 压缩包 | 是 |
 | replace | 替换目标目录中的文件 | 是 |
+| robocopy | 目录复制 / 镜像 / 移动（Robust File Copy） | 是 |
 | tree | 以树形结构显示目录 | 是 |
 | more | 分页显示文件内容 | 是 |
 | type | 显示文本文件内容 | 是 |
