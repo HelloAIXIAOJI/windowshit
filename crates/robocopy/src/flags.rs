@@ -15,6 +15,7 @@ pub const FLAGS: &[Flag] = &[
     Flag::new("MIR", Kind::Flag),
     Flag::new("MOV", Kind::Flag),
     Flag::new("MOVE", Kind::Flag),
+    Flag::new("Z", Kind::Flag),
     Flag::new("CREATE", Kind::Flag),
     Flag::new("L", Kind::Flag),
     Flag::new("COPY", Kind::Value),
@@ -72,7 +73,6 @@ pub const FLAGS: &[Flag] = &[
     Flag::new("XJD", Kind::Flag),
     Flag::new("XJF", Kind::Flag),
     // —— Windows 专属 / 暂不实现 ——
-    Flag::new("Z", Kind::Ignore),
     Flag::new("B", Kind::Ignore),
     Flag::new("ZB", Kind::Ignore),
     Flag::new("J", Kind::Ignore),
@@ -160,6 +160,8 @@ pub struct Options {
     pub purge: bool,            // /PURGE（含 /MIR 隐含）
     pub move_files: bool,       // /MOV
     pub move_all: bool,         // /MOVE
+    pub restartable: bool,      // /Z：可重启模式（断点续传）
+    pub create_only: bool,      // /CREATE：只建目录树和零字节文件
     pub list_only: bool,        // /L
     pub verbose: bool,          // /V
     pub report_extra: bool,     // /X
@@ -218,6 +220,8 @@ impl Default for Options {
             purge: false,
             move_files: false,
             move_all: false,
+            restartable: false,
+            create_only: false,
             list_only: false,
             verbose: false,
             report_extra: false,
@@ -279,6 +283,9 @@ pub struct Stats {
     pub dirs: [u64; 6],
     pub files: [u64; 6],
     pub bytes: [u64; 6],
+    /// /MT 模式下"已存在（未新建）的目录数"，供 summary 的 Dirs Skipped 列。
+    /// 原版 /MT 的 Dirs 统计：Copied 恒等于 Total，Skipped 单独记已存在目录。
+    pub dir_skip: u64,
 }
 
 impl Stats {

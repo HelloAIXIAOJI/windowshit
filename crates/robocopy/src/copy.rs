@@ -1,9 +1,12 @@
 //! 遍历、文件分类与复制核心。
 
 use std::fs;
-use std::io::{self, IsTerminal, Read, Write};
+use std::io::{self, IsTerminal, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use crate::flags::{Class, Options, Stats, COP, EXT, FAI, MIS, TOT};
 use crate::report::{output_extra_file_line, output_file_line};
@@ -11,11 +14,6 @@ use crate::util::{is_dir_empty, matches_pattern, remove_dir_all_best};
 
 /// 复制缓冲大小（1 MiB）。
 const BUF_SIZE: usize = 1024 * 1024;
-
-/// 目录状态行（删除场景）。
-fn output_extra_dir_line(src: &Path) {
-    crate::outln!("\t{}\t{}", crate::report::dir_class_field("*EXTRA Dir"), crate::util::display_dir(src));
-}
 
 /// 文件复制动作。
 enum Action {
@@ -336,12 +334,32 @@ fn is_reparse_point(p: &Path) -> bool {
 }
 
 /// 逐块复制文件。`animate=true` 时每块后输出 `\rNN.N%`（TTY 动态进度，对齐原版一位小数）。
-fn copy_streaming(src: &Path, dst: &Path, animate: bool) -> io::Result<()> {
+/// `restartable`（/Z）：目标存在部分数据（0 < 目标大小 < 源大小）时从断点继续，不重新覆盖。
+fn copy_streaming(src: &Path, dst: &Path, animate: bool, restartable: bool) -> io::Result<()> {
     let mut reader = fs::File::open(src)?;
-    let mut writer = fs::File::create(dst)?;
     let total = reader.metadata().map(|m| m.len()).unwrap_or(0);
-    let mut buf = vec![0u8; BUF_SIZE];
     let mut copied: u64 = 0;
+    // /Z 断点续传：检测目标残留的部分文件并从源偏移继续
+    let mut writer = if restartable {
+        if let Ok(dm) = fs::metadata(dst) {
+            let dlen = dm.len();
+            if dlen > 0 && dlen < total {
+                let w = fs::OpenOptions::new().write(true).append(true).open(dst)?;
+                copied = dlen;
+                w
+            } else {
+                fs::File::create(dst)?
+            }
+        } else {
+            fs::File::create(dst)?
+        }
+    } else {
+        fs::File::create(dst)?
+    };
+    if copied > 0 {
+        reader.seek(SeekFrom::Start(copied))?;
+    }
+    let mut buf = vec![0u8; BUF_SIZE];
     loop {
         let n = reader.read(&mut buf)?;
         if n == 0 {
@@ -363,27 +381,72 @@ fn copy_streaming(src: &Path, dst: &Path, animate: bool) -> io::Result<()> {
     Ok(())
 }
 
+/// /CREATE：只创建零字节文件，并还原源 mtime 与属性（实测原版目标 mtime=源）。
+fn create_empty(src: &Path, dst: &Path) -> io::Result<()> {
+    fs::File::create(dst)?;
+    if let Ok(sm) = fs::metadata(src) {
+        if let Ok(mt) = sm.modified() {
+            if let Ok(f) = fs::File::options().write(true).open(dst) {
+                let _ = f.set_modified(mt);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 复制参数的值拷贝（供线程池 worker 使用，避开 `'static` 生命周期约束）。
+#[derive(Clone, Copy)]
+struct CopyCtx {
+    retries: u32,
+    wait: Duration,
+    create_only: bool,
+    restartable: bool,
+}
+
+impl CopyCtx {
+    fn new(opts: &Options) -> CopyCtx {
+        CopyCtx {
+            retries: opts.retries,
+            wait: opts.wait,
+            create_only: opts.create_only,
+            restartable: opts.restartable,
+        }
+    }
+}
+
 /// 复制文件，带 /R /W 重试。
 /// 对齐原版 /COPY:DAT：复制前清除目标只读位（否则覆盖会失败且无限重试），
 /// 复制后设置目标 mtime 与属性 = 源（这样二次运行分类为 Same）。
 fn copy_with_retry(src: &Path, dst: &Path, opts: &Options, animate: bool) -> io::Result<()> {
-    for i in 0..=opts.retries {
+    copy_with_ctx(src, dst, &CopyCtx::new(opts), animate)
+}
+
+fn copy_with_ctx(src: &Path, dst: &Path, ctx: &CopyCtx, animate: bool) -> io::Result<()> {
+    for i in 0..=ctx.retries {
         // 目标存在且只读时先清除只读位（原版行为）
         clear_readonly(dst);
-        match copy_streaming(src, dst, animate) {
+        let r = if ctx.create_only {
+            create_empty(src, dst)
+        } else {
+            copy_streaming(src, dst, animate, ctx.restartable)
+        };
+        match r {
             Ok(_) => {
-                // 还原源文件修改时间（原版行为：二次运行时间戳相同 → Same 跳过）
-                if let Ok(sm) = fs::metadata(src) {
-                    if let Ok(mt) = sm.modified() {
-                        let f = fs::File::options().write(true).open(dst)?;
-                        let _ = f.set_modified(mt);
+                if !ctx.create_only {
+                    // 还原源文件修改时间（原版行为：二次运行时间戳相同 → Same 跳过）
+                    if let Ok(sm) = fs::metadata(src) {
+                        if let Ok(mt) = sm.modified() {
+                            if let Ok(f) = fs::File::options().write(true).open(dst) {
+                                let _ = f.set_modified(mt);
+                            }
+                        }
                     }
                 }
                 // 复制后属性 = 源属性（/COPY:DA 的 A 部分）
                 copy_attrs(src, dst);
                 return Ok(());
             }
-            Err(_e) if i < opts.retries => thread::sleep(opts.wait),
+            Err(_e) if i < ctx.retries => thread::sleep(ctx.wait),
             Err(e) => return Err(e),
         }
     }
@@ -395,8 +458,57 @@ pub struct EtaState {
     pub copied: u32,
 }
 
+/// 单个文件复制任务（/MT 批次内按提交顺序收集）。
+struct MtJob {
+    f: PathBuf,
+    dst: PathBuf,
+    sz: u64,
+    class: Class,
+    name: String,
+    ts: Option<u64>,
+}
+
+/// 线程池任务：(源路径, 目标路径, 结果回传通道)。
+type CopyJob = (PathBuf, PathBuf, mpsc::Sender<io::Result<()>>);
+
+/// /MT 多线程复制池。目录内文件并行复制，结果按提交顺序返回，保证输出有序。
+pub struct Pool {
+    tx: mpsc::Sender<CopyJob>,
+}
+
+impl Pool {
+    pub fn new(opts: &Options) -> Pool {
+        let n = opts.mt.unwrap_or(8).clamp(1, 128);
+        let ctx = CopyCtx::new(opts);
+        let (tx, rx): (mpsc::Sender<CopyJob>, mpsc::Receiver<CopyJob>) = mpsc::channel();
+        let rx = Arc::new(Mutex::new(rx));
+        for _ in 0..n {
+            let rx = Arc::clone(&rx);
+            thread::spawn(move || loop {
+                let job = rx.lock().unwrap().recv();
+                match job {
+                    Ok((src, dst, out)) => {
+                        let r = copy_with_ctx(&src, &dst, &ctx, false);
+                        let _ = out.send(r);
+                    }
+                    Err(_) => break, // 发送端关闭，退出
+                }
+            });
+        }
+        Pool { tx }
+    }
+
+    /// 提交复制任务，返回结果接收器（按提交顺序 `recv` 对应结果）。
+    fn submit(&self, src: PathBuf, dst: PathBuf) -> mpsc::Receiver<io::Result<()>> {
+        let (tx, rx) = mpsc::channel();
+        let _ = self.tx.send((src, dst, tx));
+        rx
+    }
+}
+
 /// 递归遍历 src 目录。`new_dir`：目标目录为本次新建（显示 `New Dir`）。
 /// `level`：当前层级（根=1），用于 /LEV 限制。`rc` 累积退出码标志。
+/// `pool`：/MT 线程池（目录内文件并行复制）；None 为单线程。
 pub fn walk(
     src: &Path,
     dst: &Path,
@@ -406,6 +518,7 @@ pub fn walk(
     new_dir: bool,
     level: u32,
     mut eta: Option<&mut EtaState>,
+    pool: Option<&Pool>,
 ) {
     let entries = match fs::read_dir(src) {
         Ok(e) => e,
@@ -435,7 +548,16 @@ pub fn walk(
     files.sort();
     dirs.sort();
 
+    let mt = pool.is_some();
+
     stats.dir(TOT, 1); // 每个访问的目录计入 Total
+    if mt {
+        // /MT 原版统计怪癖：Dirs Copied 恒等于 Total，Skipped 单独记已存在（未新建）目录
+        stats.dir(COP, 1);
+        if !new_dir {
+            stats.dir_skip += 1;
+        }
+    }
 
     // 第一遍：分类文件，统计本目录匹配的文件数（供目录行数字，含 /XF /MAX 等排除项）
     let mut matched_count: u64 = 0;
@@ -470,7 +592,8 @@ pub fn walk(
     }
 
     // 目录状态行（数字 = 该目录匹配的文件数，与分类字段间无 tab）
-    if !opts.no_dir_list {
+    // /MT 抑制目录行输出（原版行为）
+    if !opts.no_dir_list && !mt {
         let field = if new_dir {
             crate::report::dir_class_field("New Dir")
         } else {
@@ -479,11 +602,99 @@ pub fn walk(
         crate::outln!("\t{field}{matched_count}\t{}", crate::util::display_dir(src));
     }
 
-    // 第二遍：按分类执行
+    // extra 处理（目标中存在而源中没有的）。
+    // 原版实测顺序：目录行 → extra（目录递归报告内部文件，然后文件）→ 文件复制行。
+    // extra 目录会被递归报告其内部所有文件；/MT 下 extra 文件行显示完整路径。
+    {
+        let process_extra = |stats: &mut Stats, rc: &mut u32| {
+            if let Ok(entries) = fs::read_dir(dst) {
+                let mut extra_files: Vec<PathBuf> = Vec::new();
+                let mut extra_dirs: Vec<PathBuf> = Vec::new();
+                for e in entries.flatten() {
+                    let p = e.path();
+                    let name = e.file_name();
+                    let in_src = files.iter().any(|f| f.file_name() == Some(name.as_os_str()))
+                        || dirs.iter().any(|d| d.file_name() == Some(name.as_os_str()));
+                    if in_src {
+                        continue;
+                    }
+                    let is_dir = match fs::symlink_metadata(&p) {
+                        Ok(m) => m.is_dir() || is_reparse_point(&p),
+                        Err(_) => false,
+                    };
+                    if is_dir {
+                        extra_dirs.push(p);
+                    } else {
+                        extra_files.push(p);
+                    }
+                }
+                extra_files.sort();
+                extra_dirs.sort();
+
+                // /XX：排除 extra（不报告行），但统计 Extras 并置退出码（原版实测）
+                if opts.exclude_extra {
+                    for _ in &extra_dirs {
+                        stats.dir(EXT, 1);
+                        *rc |= 2;
+                    }
+                    for ef in &extra_files {
+                        let sz = ef.metadata().map(|m| m.len()).unwrap_or(0);
+                        stats.file(EXT, 1, sz);
+                        *rc |= 2;
+                    }
+                } else if opts.purge {
+                    // 目录先（递归报告内部文件），文件后。/L 时也报告并统计（原版实测），不实际删除。
+                    for ed in &extra_dirs {
+                        extra_dir_mt(ed, opts, stats, rc, true, mt);
+                        if !opts.list_only && remove_dir_all_best(ed) {
+                            // 实际删除目录树
+                        }
+                        stats.dir(EXT, 1);
+                        *rc |= 2;
+                    }
+                    for ef in &extra_files {
+                        let name = extra_name(ef, mt);
+                        let sz = ef.metadata().map(|m| m.len()).unwrap_or(0);
+                        let reported = if opts.list_only {
+                            true
+                        } else {
+                            fs::remove_file(ef).is_ok()
+                        };
+                        if reported {
+                            stats.file(EXT, 1, sz);
+                            *rc |= 2;
+                            output_extra_file_line(&name, sz, opts);
+                        }
+                    }
+                } else {
+                    // 默认（含 /X，实测原版）：报告 extra 目录行与顶层文件，统计 Extras，退出码 |2。
+                    // /L 也报告并统计（原版实测）。不递归目录内容（/PURGE 才递归列出并删除）。
+                    for ed in &extra_dirs {
+                        if !opts.no_dir_list {
+                            crate::outln!("\t{:<18}-1\t{}", "*EXTRA Dir", crate::util::display_dir(ed));
+                        }
+                        stats.dir(EXT, 1);
+                        *rc |= 2;
+                    }
+                    for ef in &extra_files {
+                        let name = extra_name(ef, mt);
+                        let sz = ef.metadata().map(|m| m.len()).unwrap_or(0);
+                        output_extra_file_line(&name, sz, opts);
+                        stats.file(EXT, 1, sz);
+                        *rc |= 2;
+                    }
+                }
+            }
+        };
+        process_extra(stats, rc);
+    }
+
+    // 第二遍：按分类执行。单线程立即复制；/MT 收集到本目录任务，待 extra 处理后统一提交。
+    let mut mt_jobs: Vec<MtJob> = Vec::new();
     for (f, class, ts) in &plan {
         let name = f.file_name().unwrap_or_default().to_string_lossy();
-        // /FP：显示源完整路径（实测原版格式 `f:\...\src\a.txt`）
-        let display_name = if opts.full_path {
+        // /FP：显示源完整路径（实测原版格式 `f:\...\src\a.txt`）；/MT 强制完整路径
+        let display_name = if opts.full_path || mt {
             f.to_string_lossy().replace('/', "\\")
         } else {
             name.to_string()
@@ -499,6 +710,18 @@ pub fn walk(
                     stats.file(COP, 1, sz);
                     *rc |= 1;
                     output_file_line(*class, sz, &display_name, ts_arg, opts, false, None);
+                    continue;
+                }
+                if mt {
+                    // /MT：收集到本目录任务，稍后批量提交线程池
+                    mt_jobs.push(MtJob {
+                        f: f.clone(),
+                        dst: dst_file,
+                        sz,
+                        class: *class,
+                        name: display_name,
+                        ts: ts_arg,
+                    });
                     continue;
                 }
                 // 是否动画进度：TTY 且未关进度、未关文件列表
@@ -562,59 +785,10 @@ pub fn walk(
         }
     }
 
-    // extra 处理（目标中存在而源中没有的）—— 原版在该目录文件处理完后立即输出
-    if let Ok(entries) = fs::read_dir(dst) {
-        let mut extra_files: Vec<PathBuf> = Vec::new();
-        let mut extra_dirs: Vec<PathBuf> = Vec::new();
-        for e in entries.flatten() {
-            let p = e.path();
-            let name = e.file_name();
-            let in_src = files.iter().any(|f| f.file_name() == Some(name.as_os_str()))
-                || dirs.iter().any(|d| d.file_name() == Some(name.as_os_str()));
-            if in_src {
-                continue;
-            }
-            let is_dir = match fs::symlink_metadata(&p) {
-                Ok(m) => m.is_dir() || is_reparse_point(&p),
-                Err(_) => false,
-            };
-            if is_dir {
-                extra_dirs.push(p);
-            } else {
-                extra_files.push(p);
-            }
-        }
-        extra_files.sort();
-        extra_dirs.sort();
-
-        // /XX：排除 extra（不删除不报告），优先于 /PURGE
-        if opts.exclude_extra {
-            // 不处理
-        } else if opts.purge {
-            for ef in &extra_files {
-                let name = ef.file_name().unwrap_or_default().to_string_lossy();
-                let sz = ef.metadata().map(|m| m.len()).unwrap_or(0);
-                if !opts.list_only && fs::remove_file(ef).is_ok() {
-                    stats.file(EXT, 1, sz);
-                    *rc |= 2;
-                    output_extra_file_line(&name, sz, opts);
-                }
-            }
-            for ed in &extra_dirs {
-                if !opts.list_only && remove_dir_all_best(ed) {
-                    stats.dir(EXT, 1);
-                    *rc |= 2;
-                    if !opts.no_dir_list {
-                        output_extra_dir_line(ed);
-                    }
-                }
-            }
-        } else if opts.report_extra {
-            for ef in &extra_files {
-                let name = ef.file_name().unwrap_or_default().to_string_lossy();
-                let sz = ef.metadata().map(|m| m.len()).unwrap_or(0);
-                output_extra_file_line(&name, sz, opts);
-            }
+    // /MT：批量提交本目录复制任务（输出在 extra 之后，原版顺序）
+    if mt {
+        if let Some(pool) = pool {
+            flush_mt_jobs(pool, mt_jobs, stats, rc, opts, eta.as_deref_mut());
         }
     }
 
@@ -643,15 +817,131 @@ pub fn walk(
             continue;
         }
         let dst_dir_existed = dst_dir.exists();
-        if !opts.list_only && !dst_dir_existed {
-            if fs::create_dir_all(&dst_dir).is_ok() {
+        if !dst_dir_existed {
+            if !opts.list_only {
+                if fs::create_dir_all(&dst_dir).is_ok() {
+                    if !mt {
+                        stats.dir(COP, 1); // /MT 已在目录访问时计过 Copied
+                    }
+                } else {
+                    stats.dir(FAI, 1);
+                    *rc |= 8;
+                }
+            } else if !mt {
+                // /L：不实际创建，但目标不存在仍计入 Copied（原版实测）
                 stats.dir(COP, 1);
-            } else {
-                stats.dir(FAI, 1);
-                *rc |= 8;
             }
         }
         // /L 不创建目录，但目录在目标中不存在仍算 New Dir
-        walk(d, &dst_dir, opts, stats, rc, !dst_dir_existed, level + 1, eta.as_deref_mut());
+        walk(d, &dst_dir, opts, stats, rc, !dst_dir_existed, level + 1, eta.as_deref_mut(), pool);
+    }
+}
+
+/// 批量提交 /MT 复制任务并按提交顺序输出结果（顺序稳定，便于与原版 diff）。
+fn flush_mt_jobs(
+    pool: &Pool,
+    jobs: Vec<MtJob>,
+    stats: &mut Stats,
+    rc: &mut u32,
+    opts: &Options,
+    mut eta: Option<&mut EtaState>,
+) {
+    if jobs.is_empty() {
+        return;
+    }
+    let mut rxs = Vec::with_capacity(jobs.len());
+    for j in &jobs {
+        rxs.push(pool.submit(j.f.clone(), j.dst.clone()));
+    }
+    for (j, rx) in jobs.into_iter().zip(rxs) {
+        let ok = rx.recv().map(|r| r.is_ok()).unwrap_or(false);
+        if ok {
+            stats.file(COP, 1, j.sz);
+            *rc |= 1;
+            // /ETA 近似：非首个复制文件显示 `\t\tHH:MM -> HH:MM`（固定保守速率 500 B/s）
+            let mut eta_str: Option<String> = None;
+            if opts.eta {
+                if let Some(e) = eta.as_deref_mut() {
+                    e.copied += 1;
+                    if e.copied > 1 {
+                        let now = crate::time::fmt_now_hm();
+                        let eta_t = crate::time::fmt_hm_after(j.sz / 500);
+                        eta_str = Some(format!("{now} -> {eta_t}"));
+                    }
+                }
+            }
+            output_file_line(j.class, j.sz, &j.name, j.ts, opts, false, eta_str.as_deref());
+        } else {
+            stats.file(FAI, 1, j.sz);
+            *rc |= 8;
+            output_file_line(j.class, j.sz, &j.name, j.ts, opts, false, None);
+        }
+        // /M：复制并清除源归档位
+        if opts.archive_move {
+            #[cfg(windows)]
+            clear_archive(&j.f);
+        }
+        if opts.move_files || opts.move_all {
+            let _ = fs::remove_file(&j.f);
+        }
+    }
+}
+
+/// extra 文件的显示名：/MT 用完整路径（原版行为），否则用文件名。
+fn extra_name(ef: &Path, mt: bool) -> String {
+    if mt {
+        ef.to_string_lossy().replace('/', "\\")
+    } else {
+        ef.file_name().unwrap_or_default().to_string_lossy().to_string()
+    }
+}
+
+/// 递归处理 extra 目录（原版会报告目录内部的所有文件，dir 行显示 `-1`）。
+/// `purge=true`（/PURGE）：删除文件并计入 Extras；否则（/X）只报告不统计。
+/// `mt`：/MT 下文件行显示完整路径。
+fn extra_dir_mt(ed: &Path, opts: &Options, stats: &mut Stats, rc: &mut u32, purge: bool, mt: bool) {
+    if !opts.no_dir_list {
+        // 原版格式：`*EXTRA Dir` 18 宽（无缩进）+ `-1`（数字列）
+        crate::outln!("\t{:<18}-1\t{}", "*EXTRA Dir", crate::util::display_dir(ed));
+    }
+    if let Ok(entries) = fs::read_dir(ed) {
+        let mut files: Vec<PathBuf> = Vec::new();
+        let mut dirs: Vec<PathBuf> = Vec::new();
+        for e in entries.flatten() {
+            let p = e.path();
+            let is_dir = match fs::symlink_metadata(&p) {
+                Ok(m) => m.is_dir() || is_reparse_point(&p),
+                Err(_) => false,
+            };
+            if is_dir {
+                dirs.push(p);
+            } else {
+                files.push(p);
+            }
+        }
+        files.sort();
+        dirs.sort();
+        for f in &files {
+            let name = extra_name(f, mt);
+            let sz = f.metadata().map(|m| m.len()).unwrap_or(0);
+            if purge {
+                // /L：报告并统计，不删除（原版实测）
+                let reported = if opts.list_only {
+                    true
+                } else {
+                    fs::remove_file(f).is_ok()
+                };
+                if reported {
+                    stats.file(EXT, 1, sz);
+                    *rc |= 2;
+                    output_extra_file_line(&name, sz, opts);
+                }
+            } else {
+                output_extra_file_line(&name, sz, opts);
+            }
+        }
+        for d in &dirs {
+            extra_dir_mt(d, opts, stats, rc, purge, mt);
+        }
     }
 }

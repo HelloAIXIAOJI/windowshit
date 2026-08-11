@@ -103,7 +103,7 @@ pub fn thousands(n: u64) -> String {
     out
 }
 
-/// 千位分隔 + 固定小数位（整数部分千位分隔，小数位保留）。
+/// 千位分隔 + 固定小数位（整数部分千位分隔，小数点用 `.` 对齐原版）。
 pub fn thousands_decimal(x: f64, precision: usize) -> String {
     let s = format!("{x:.precision$}");
     match s.split_once('.') {
@@ -113,7 +113,7 @@ pub fn thousands_decimal(x: f64, precision: usize) -> String {
             } else {
                 int.parse().unwrap_or(0)
             };
-            format!("{},{frac}", thousands(int_part))
+            format!("{}.{frac}", thousands(int_part))
         }
         None => thousands(s.parse().unwrap_or(0)),
     }
@@ -146,7 +146,7 @@ pub fn fmt_bytes_sum(n: u64) -> String {
         format!("{:.1} k", n as f64 / 1024.0)
     } else {
         let units = ["m", "g", "t"];
-        let mut v = n as f64 / 1024.0;
+        let mut v = n as f64 / (1024.0 * 1024.0); // 直接 MiB 起算
         let mut u = 0;
         while v >= 1024.0 && u < units.len() - 1 {
             v /= 1024.0;

@@ -64,6 +64,8 @@ fn build_opts(parsed: &Parsed, mt: Option<usize>, xf: Vec<String>, xd: Vec<Strin
         purge: purge || mir,
         move_files: parsed.flags.contains_key("MOV"),
         move_all: parsed.flags.contains_key("MOVE"),
+        restartable: parsed.flags.contains_key("Z"),
+        create_only: parsed.flags.contains_key("CREATE"),
         list_only: parsed.flags.contains_key("L"),
         verbose: parsed.flags.contains_key("V"),
         report_extra: parsed.flags.contains_key("X"),
@@ -314,15 +316,26 @@ fn main() -> ExitCode {
     let start = Instant::now();
 
     // 目标根目录不存在时先创建（原版自动创建）
+    // 注意：/MT 模式下 Dirs 的 Copied 恒等于 Total（原版统计怪癖），根目录由 walk 统一计数。
     let dst_existed = dst.exists();
-    if !opts.list_only && !dst_existed {
-        if fs::create_dir_all(&dst).is_ok() {
+    if !dst_existed {
+        if !opts.list_only {
+            if fs::create_dir_all(&dst).is_ok() {
+                if opts.mt.is_none() {
+                    stats.dir(flags::COP, 1);
+                }
+            } else {
+                stats.dir(flags::FAI, 1);
+                rc |= 8;
+            }
+        } else if opts.mt.is_none() {
+            // /L：不实际创建，但目标不存在仍计入 Copied（原版实测）
             stats.dir(flags::COP, 1);
-        } else {
-            stats.dir(flags::FAI, 1);
-            rc |= 8;
         }
     }
+
+    // /MT 多线程池（目录内文件并行复制，输出保持有序）
+    let pool = opts.mt.map(|_| copy::Pool::new(&opts));
 
     let mut eta_state = copy::EtaState { copied: 0 };
     copy::walk(
@@ -334,11 +347,12 @@ fn main() -> ExitCode {
         !dst_existed,
         1,
         if opts.eta { Some(&mut eta_state) } else { None },
+        pool.as_ref(),
     );
 
     if !opts.no_job_summary {
         crate::outln!("\r\n------------------------------------------------------------------------------\r\n");
-        print_summary(&stats, start);
+        print_summary(&stats, start, opts.mt.is_some());
     }
 
     ExitCode::from(rc as u8)

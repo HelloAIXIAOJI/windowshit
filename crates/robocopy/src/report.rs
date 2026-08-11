@@ -66,7 +66,8 @@ pub fn output_file_line(
     if opts.no_file_list {
         return;
     }
-    let display_name = if opts.full_path { name } else { file_name_of(name) };
+    // /MT 强制显示完整路径（原版行为），与 /FP 无关（不影响 Options 回显）
+    let display_name = if opts.full_path || opts.mt.is_some() { name } else { file_name_of(name) };
     // 原版格式：`\t{field}\t\t{sz}[ {ts}]\t{name}[ \t\t{eta}]`（/TS 在大小后、文件名前）
     let ts_part = match ts {
         Some(t) => format!(" {}", crate::time::fmt_utc(t)),
@@ -95,7 +96,7 @@ pub fn output_skipped_line(class: Class, size: u64, name: &str, ts: Option<u64>,
         return;
     }
     let field = format!("{:>14}", class.lower());
-    let display_name = if opts.full_path { name } else { file_name_of(name) };
+    let display_name = if opts.full_path || opts.mt.is_some() { name } else { file_name_of(name) };
     let ts_part = match ts {
         Some(t) => format!(" {}", crate::time::fmt_utc(t)),
         None => String::new(),
@@ -203,11 +204,20 @@ fn options_line(files: &[String], opts: &Options) -> String {
     if opts.mirror {
         v.push("/MIR".into());
     }
+    if opts.create_only {
+        v.push("/CREATE".into());
+    }
+    if opts.restartable {
+        v.push("/Z".into());
+    }
     if opts.no_progress {
         v.push("/NP".into());
     }
     if opts.eta {
         v.push("/ETA".into());
+    }
+    if let Some(mt) = opts.mt {
+        v.push(format!("/MT:{mt}"));
     }
     if opts.include_same {
         v.push("/IS".into());
@@ -275,9 +285,6 @@ fn options_line(files: &[String], opts: &Options) -> String {
     if let Some(n) = opts.lev {
         v.push(format!("/LEV:{n}"));
     }
-    if let Some(mt) = opts.mt {
-        v.push(format!("/MT:{mt}"));
-    }
     v.push(format!("/R:{}", opts.retries));
     v.push(format!("/W:{}", opts.wait.as_secs()));
     v.join(" ")
@@ -323,12 +330,16 @@ pub fn print_header_with(
     }
 }
 
-/// 统计表格。
-pub fn print_summary(stats: &Stats, start: Instant) {
+/// 统计表格。`mt`：/MT 模式下原版 Dirs 统计为 Copied=Total、Skipped=已存在目录数。
+pub fn print_summary(stats: &Stats, start: Instant, mt: bool) {
     let d = &stats.dirs;
     let f = &stats.files;
     let b = &stats.bytes;
-    let d_skip = d[TOT].saturating_sub(d[COP] + d[MIS] + d[FAI]);
+    let d_skip = if mt {
+        stats.dir_skip
+    } else {
+        d[TOT].saturating_sub(d[COP] + d[MIS] + d[FAI])
+    };
     let f_skip = f[TOT].saturating_sub(f[COP] + f[MIS] + f[FAI]);
     let b_skip = b[TOT].saturating_sub(b[COP] + b[MIS] + b[FAI]);
 
@@ -380,14 +391,14 @@ pub fn print_summary(stats: &Stats, start: Instant) {
         fmt_duration(0)
     );
 
-    // Speed（数字右对齐 23，MegaBytes/min 千位分隔三位小数）
+    // Speed（实测原版：`Speed :` 10 宽 + 数字 20 宽，无中间空格）
     let secs = start.elapsed().as_secs_f64();
     let copied_bytes = b[COP] as f64;
     if secs > 0.0 && copied_bytes > 0.0 {
         let bps = copied_bytes / secs;
         let mbpm = bps / 1048576.0 * 60.0;
-        outln!("\r\n\r\n{:>10} {:>23} Bytes/sec.", "Speed :", thousands(bps.round() as u64));
-        outln!("{:>10} {:>23} MegaBytes/min.", "Speed :", thousands_decimal(mbpm, 3));
+        outln!("\r\n\r\n{:>10}{:>20} Bytes/sec.", "Speed :", thousands(bps.round() as u64));
+        outln!("{:>10}{:>20} MegaBytes/min.", "Speed :", thousands_decimal(mbpm, 3));
     }
 
     crate::sink::emit_split(
