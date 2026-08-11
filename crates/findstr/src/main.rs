@@ -205,32 +205,36 @@ fn main() -> ExitCode {
         }
     } else {
         for file in &search_files {
-            match fs::read_to_string(file) {
-                Ok(content) => {
-                    if args.filename_only {
-                        if content.lines().any(match_line) {
-                            found = true;
-                            println!("{}", file.display());
-                        }
-                        continue;
-                    }
-                    let prefix = if search_files.len() > 1 || args.recursive {
-                        format!("{}:", file.display())
-                    } else {
-                        String::new()
-                    };
-                    for (no, line) in content.lines().enumerate() {
-                        if match_line(line) {
-                            found = true;
-                            print_matched(&mut io::stdout(), &prefix, line, no as u64 + 1, &args);
-                        }
-                    }
-                }
+            // 流式逐行读取，避免整文件读入内存（OOM 风险）。
+            let handle = match fs::File::open(file) {
+                Ok(f) => f,
                 Err(_) => {
                     let mut a = FluentArgs::new();
                     a.set("file", file.to_string_lossy());
                     eprintln!("{}", i18n.tr("error-cannot-open", Some(&a)));
                     return ExitCode::from(2);
+                }
+            };
+            let mut reader = io::BufReader::new(handle);
+            if args.filename_only {
+                for line in (&mut reader).lines().map_while(Result::ok) {
+                    if match_line(&line) {
+                        found = true;
+                        println!("{}", file.display());
+                        break;
+                    }
+                }
+                continue;
+            }
+            let prefix = if search_files.len() > 1 || args.recursive {
+                format!("{}:", file.display())
+            } else {
+                String::new()
+            };
+            for (no, line) in (&mut reader).lines().map_while(Result::ok).enumerate() {
+                if match_line(&line) {
+                    found = true;
+                    print_matched(&mut io::stdout(), &prefix, &line, no as u64 + 1, &args);
                 }
             }
         }

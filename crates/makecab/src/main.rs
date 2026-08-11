@@ -19,7 +19,7 @@
 
 use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -254,7 +254,7 @@ fn build_cab(
     files: &[String],
     dest: &str,
     compression: cab::CompressionType,
-) -> Result<Vec<u8>, String> {
+) -> Result<u64, String> {
     let mut builder = cab::CabinetBuilder::new();
     let folder = builder.add_folder(compression);
     for f in files {
@@ -283,27 +283,28 @@ fn build_cab(
             writer.finish().map_err(|e| e.to_string())?;
         }
     }
-    let buf = fs::read(&tmp).map_err(|e| e.to_string())?;
-    let _ = fs::remove_file(&tmp);
-
-    // flush 进度：按写出字节分段的真实进度
+    // 从临时文件流式写入目标，避免把整个 CAB 读回内存（OOM 风险）。
+    let total = fs::metadata(&tmp).map_err(|e| e.to_string())?.len() as usize;
     progress(0.0, "[flushing current folder]");
-    let total = buf.len();
-    let third = (total / 3).max(1);
+    let mut srcf = fs::File::open(&tmp).map_err(|e| e.to_string())?;
     let mut f = fs::File::create(dest).map_err(|e| e.to_string())?;
+    let mut buf = [0u8; 65536];
     let mut written = 0usize;
     while written < total {
-        let chunk = third.min(total - written);
-        f.write_all(&buf[written..written + chunk])
-            .map_err(|e| e.to_string())?;
-        written += chunk;
+        let n = srcf.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        written += n;
         progress(
             written as f64 / total as f64 * 100.0,
             "[flushing current folder]",
         );
     }
+    let _ = fs::remove_file(&tmp);
     println!();
-    Ok(buf)
+    Ok(total as u64)
 }
 
 /// 统计块文本（终端输出与 setup.rpt 共用，与原版一致）。
@@ -338,7 +339,7 @@ fn do_single(
     dest: Option<&str>,
     l_dir: Option<&str>,
     d: &Directives,
-) -> Result<Vec<u8>, String> {
+) -> Result<u64, String> {
     if !Path::new(source).exists() {
         return Err(format!("ERROR: Could not find file: {source}"));
     }
@@ -355,7 +356,7 @@ fn do_single(
 }
 
 /// /F 多文件模式打包。
-fn do_multi(list_file: &str, d: &Directives) -> Result<Vec<u8>, String> {
+fn do_multi(list_file: &str, d: &Directives) -> Result<u64, String> {
     let start = std::time::Instant::now();
     let compression = resolve_compression(d)?;
     let max_size = check_max_disk_size(d)?;
@@ -414,7 +415,7 @@ fn do_multi(list_file: &str, d: &Directives) -> Result<Vec<u8>, String> {
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     }
 
-    let buf = build_cab(&files, &cab_path, compression)?;
+    let buf_size = build_cab(&files, &cab_path, compression)?;
 
     // setup.inf / setup.rpt
     let sizes: Vec<u64> = files
@@ -423,13 +424,13 @@ fn do_multi(list_file: &str, d: &Directives) -> Result<Vec<u8>, String> {
         .collect();
     write_setup_inf(&files, &sizes, &name)?;
     let elapsed = start.elapsed().as_secs_f64();
-    let stats = stats_text(files.len(), total_before, buf.len() as u64, elapsed);
+    let stats = stats_text(files.len(), total_before, buf_size, elapsed);
     // 原版 setup.rpt = MakeCAB Report 头 + 空行 + 统计块
     let rpt = format!("MakeCAB Report: {}\r\n\r\n{stats}\r\n", ctime_now());
     fs::write("setup.rpt", rpt).map_err(|e| e.to_string())?;
 
     println!("{stats}");
-    Ok(buf)
+    Ok(buf_size)
 }
 
 /// 通配符展开（Windows 风格 `*` `?`，大小写不敏感）。

@@ -101,15 +101,15 @@ fn main() -> ExitCode {
         }
     }
 
-    // 切行、去掉行尾 \r
-    let mut lines: Vec<String> = content
+    // 切行、去掉行尾 \r。借用 content，避免再复制一份（峰值 ~N）。
+    let mut lines: Vec<&str> = content
         .lines()
-        .map(|l| l.strip_suffix('\r').unwrap_or(l).to_string())
+        .map(|l| l.strip_suffix('\r').unwrap_or(l))
         .collect();
 
     // /S 压缩连续空行
     if squeeze {
-        let mut squeezed: Vec<String> = Vec::new();
+        let mut squeezed: Vec<&str> = Vec::new();
         let mut prev_blank = false;
         for l in lines {
             let blank = l.trim().is_empty();
@@ -122,9 +122,10 @@ fn main() -> ExitCode {
         lines = squeezed;
     }
 
-    // 展开制表符 /Tn
+    // 展开制表符 /Tn：仅在确实含 tab 时才生成新行，避免无条件复制。
+    let mut owned_lines: Vec<String> = Vec::new();
     if tab_size > 0 && lines.iter().any(|l| l.contains('\t')) {
-        for l in lines.iter_mut() {
+        for l in &lines {
             let mut out = String::new();
             let mut col = 0usize;
             for ch in l.chars() {
@@ -137,8 +138,9 @@ fn main() -> ExitCode {
                     col += 1;
                 }
             }
-            *l = out;
+            owned_lines.push(out);
         }
+        lines = owned_lines.iter().map(|s| s.as_str()).collect();
     }
 
     // 起始行 +n

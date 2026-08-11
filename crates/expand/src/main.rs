@@ -16,7 +16,7 @@
 
 use std::env;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -24,6 +24,9 @@ use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
 
 const BANNER: &str = "Windowshit File Expansion Utility\r\n\
 Copyright (c) Windowshit. All rights reversed.";
+
+/// SZDD 解压结果大小上限，防止恶意文件头导致按任意大小分配内存（OOM）。
+const MAX_DECOMPRESS_SIZE: usize = 256 * 1024 * 1024;
 
 const HELP: &str = "Expands one or more compressed files.
 
@@ -115,19 +118,29 @@ enum FileKind {
 }
 
 fn sniff(path: &str) -> FileKind {
-    let Ok(data) = fs::read(path) else {
+    // 只需读文件头（前 14 字节）即可判断格式，不要整文件读入（OOM 风险）。
+    let Ok(mut f) = fs::File::open(path) else {
         return FileKind::Unreadable;
     };
-    if data.len() >= 4 && &data[0..4] == b"MSCF" {
+    let mut head = [0u8; 14];
+    let mut read = 0usize;
+    while read < head.len() {
+        match f.read(&mut head[read..]) {
+            Ok(0) => break,
+            Ok(n) => read += n,
+            Err(_) => return FileKind::Unreadable,
+        }
+    }
+    if read >= 4 && &head[0..4] == b"MSCF" {
         return FileKind::Cab;
     }
-    if data.len() >= 14
-        && data[0..4] == *b"SZDD"
-        && data[4..8] == [0x88, 0xF0, 0x27, 0x33]
-        && data[8] == b'A'
+    if read >= 14
+        && head[0..4] == *b"SZDD"
+        && head[4..8] == [0x88, 0xF0, 0x27, 0x33]
+        && head[8] == b'A'
     {
-        let orig = data[9];
-        let size = u32::from_le_bytes(data[10..14].try_into().unwrap()) as usize;
+        let orig = head[9];
+        let size = u32::from_le_bytes(head[10..14].try_into().unwrap()) as usize;
         return FileKind::Szdd(orig, size);
     }
     FileKind::Plain
@@ -135,6 +148,10 @@ fn sniff(path: &str) -> FileKind {
 
 /// SZDD（LZSS 变体）解压。4096 环形窗口，初始为空格。
 fn szdd_decode(data: &[u8], size: usize) -> Option<Vec<u8>> {
+    // 防 OOM：size 来自文件头且无上限，恶意文件可设成 4GB 直接触发分配失败。
+    if size > MAX_DECOMPRESS_SIZE {
+        return None;
+    }
     let mut window = [0x20u8; 4096];
     let mut pos = 4096usize - 16;
     let mut out = Vec::with_capacity(size);
@@ -359,19 +376,27 @@ fn run_queue(
 
 /// 复制单个文件（普通源）。
 fn copy_one(src: &str, dst: &str) -> ExitCode {
-    let data = match fs::read(src) {
-        Ok(d) => d,
+    let mut reader = match fs::File::open(src) {
+        Ok(r) => r,
         Err(_) => {
             eprintln!("Can't open input file: {src}.");
             return ExitCode::from(255);
         }
     };
-    if let Err(e) = fs::write(dst, &data) {
-        eprintln!("{e}");
+    let size = reader.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut writer = match fs::File::create(dst) {
+        Ok(w) => w,
+        Err(_) => {
+            eprintln!("Can't open input file: {dst}.");
+            return ExitCode::from(255);
+        }
+    };
+    if io::copy(&mut reader, &mut writer).is_err() {
+        eprintln!("Can't copy {src} to {dst}.");
         return ExitCode::from(255);
     }
     println!("Copying {src} to {dst}.");
-    println!("{src}: {} bytes copied.", data.len());
+    println!("{src}: {size} bytes copied.");
     println!();
     ExitCode::SUCCESS
 }
@@ -387,21 +412,29 @@ fn copy_many(files: &[String], dest: Option<&str>) -> ExitCode {
     };
     let mut total = 0u64;
     for src in files {
-        let data = match fs::read(src) {
-            Ok(d) => d,
+        let mut reader = match fs::File::open(src) {
+            Ok(r) => r,
             Err(_) => {
                 eprintln!("Can't open input file: {src}.");
                 return ExitCode::from(255);
             }
         };
+        let size = reader.metadata().map(|m| m.len()).unwrap_or(0);
         let dst = join_path(d, &basename(src));
-        if let Err(e) = fs::write(&dst, &data) {
-            eprintln!("{e}");
+        let mut writer = match fs::File::create(&dst) {
+            Ok(w) => w,
+            Err(_) => {
+                eprintln!("Can't open input file: {dst}.");
+                return ExitCode::from(255);
+            }
+        };
+        if io::copy(&mut reader, &mut writer).is_err() {
+            eprintln!("Can't copy {src} to {dst}.");
             return ExitCode::from(255);
         }
-        total += data.len() as u64;
+        total += size;
         println!("Copying {src} to {dst}.");
-        println!("{src}: {} bytes copied.", data.len());
+        println!("{src}: {size} bytes copied.");
         println!();
     }
     println!(

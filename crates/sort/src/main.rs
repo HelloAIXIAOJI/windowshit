@@ -131,27 +131,38 @@ fn main() -> ExitCode {
         lines.sort_by(|a, b| cmp(a, b));
     }
 
-    let mut out_text = String::new();
-    for line in &lines {
-        out_text.push_str(line);
-        out_text.push_str("\r\n");
-    }
-
+    // 直接逐行写出，避免再重建一整份 out_text（峰值从 ~2N 降到 ~N）。
     match &output_file {
         Some(f) => {
-            if let Err(e) = fs::write(f, out_text) {
-                let err = e.to_string();
-                let mut a = FluentArgs::new();
-                a.set("file", f.as_str());
-                a.set("err", &err);
-                eprintln!("{}", i18n.tr("error-write-output", Some(&a)));
-                return ExitCode::from(1);
+            let file = match fs::File::create(f) {
+                Ok(f) => f,
+                Err(e) => {
+                    let err = e.to_string();
+                    let mut a = FluentArgs::new();
+                    a.set("file", f.as_str());
+                    a.set("err", &err);
+                    eprintln!("{}", i18n.tr("error-write-output", Some(&a)));
+                    return ExitCode::from(1);
+                }
+            };
+            let mut writer = io::BufWriter::new(file);
+            for line in &lines {
+                if writer.write_all(line.as_bytes()).is_err()
+                    || writer.write_all(b"\r\n").is_err()
+                {
+                    return ExitCode::from(1);
+                }
             }
         }
         None => {
-            let mut stdout = io::stdout();
-            if stdout.write_all(out_text.as_bytes()).is_err() {
-                return ExitCode::from(1);
+            let stdout = io::stdout();
+            let mut writer = io::BufWriter::new(stdout.lock());
+            for line in &lines {
+                if writer.write_all(line.as_bytes()).is_err()
+                    || writer.write_all(b"\r\n").is_err()
+                {
+                    return ExitCode::from(1);
+                }
             }
         }
     }

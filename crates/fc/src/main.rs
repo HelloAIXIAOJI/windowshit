@@ -10,6 +10,7 @@
 
 use std::env;
 use std::fs;
+use std::io::Read;
 use std::process::ExitCode;
 
 use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
@@ -201,22 +202,57 @@ fn print_line(idx: usize, line: &str, line_num: bool) {
     }
 }
 
-/// 二进制比较：逐字节，列出每个不同偏移（8 位 hex）。
-fn compare_binary(d1: &[u8], d2: &[u8], f1: &str, f2: &str) -> bool {
-    let n = d1.len().max(d2.len());
-    let mut any = false;
-    for i in 0..n {
-        let a = d1.get(i).copied().unwrap_or(0);
-        let b = d2.get(i).copied().unwrap_or(0);
-        if a != b {
-            any = true;
-            println!("{:08X}: {:02X} {:02X}", i, a, b);
+/// 二进制比较：流式逐块读取两个文件，列出每个不同偏移（8 位 hex）。
+/// 避免整文件读入内存（OOM 风险）。
+fn compare_binary(f1: &str, f2: &str) -> bool {
+    let mut r1 = match fs::File::open(f1) {
+        Ok(f) => f,
+        Err(_) => {
+            eprintln!(
+                "FC: cannot open {} - No such file or folder",
+                display_path(f1)
+            );
+            return true;
         }
+    };
+    let mut r2 = match fs::File::open(f2) {
+        Ok(f) => f,
+        Err(_) => {
+            eprintln!(
+                "FC: cannot open {} - No such file or folder",
+                display_path(f2)
+            );
+            return true;
+        }
+    };
+    let mut b1 = [0u8; 65536];
+    let mut b2 = [0u8; 65536];
+    let mut offset: usize = 0;
+    let mut any = false;
+    loop {
+        let n1 = Read::read(&mut r1, &mut b1).unwrap_or(0);
+        let n2 = Read::read(&mut r2, &mut b2).unwrap_or(0);
+        let n = n1.max(n2);
+        if n == 0 {
+            break;
+        }
+        for i in 0..n {
+            let a = if i < n1 { Some(b1[i]) } else { None };
+            let b = if i < n2 { Some(b2[i]) } else { None };
+            if a != b {
+                any = true;
+                println!(
+                    "{:08X}: {:02X} {:02X}",
+                    offset + i,
+                    a.unwrap_or(0),
+                    b.unwrap_or(0)
+                );
+            }
+        }
+        offset += n;
     }
     if !any {
         println!("FC: no differences encountered");
-    } else {
-        let _ = (f1, f2);
     }
     any
 }
@@ -269,6 +305,15 @@ fn main() -> ExitCode {
     let f2 = files[1];
     println!("Comparing files {} and {}", display_path(f1), display_path(f2));
 
+    // 二进制比较：流式逐字节，避免整文件读入内存（OOM 风险）。
+    if binary {
+        return if compare_binary(f1, f2) {
+            ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
+        };
+    }
+
     let d1 = match fs::read(f1) {
         Ok(d) => d,
         Err(_) => {
@@ -289,14 +334,6 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-
-    if binary {
-        return if compare_binary(&d1, &d2, f1, f2) {
-            ExitCode::from(1)
-        } else {
-            ExitCode::SUCCESS
-        };
-    }
 
     let (l1, l2) = if unicode {
         (read_lines_utf16(&d1), read_lines_utf16(&d2))
