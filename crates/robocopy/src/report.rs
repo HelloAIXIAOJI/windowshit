@@ -251,6 +251,9 @@ fn options_line(files: &[String], opts: &Options) -> String {
             v.push("/XJD".into());
         }
     }
+    if opts.fft {
+        v.push("/FFT".into());
+    }
     if opts.archive_move {
         v.push("/M".into());
     } else if opts.archive {

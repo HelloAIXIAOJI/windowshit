@@ -40,8 +40,17 @@ fn class_action(class: Class, opts: &Options) -> Action {
     }
 }
 
+/// /FFT：FAT 文件时间（2 秒粒度），向下取整到偶数秒。
+fn fft_round(t: std::time::SystemTime) -> std::time::SystemTime {
+    let secs = t
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs & !1)
+}
+
 /// 分类：源与目标文件比较。
-fn classify(src: &Path, dst: &Path, _opts: &Options) -> Class {
+fn classify(src: &Path, dst: &Path, opts: &Options) -> Class {
     let src_meta = match fs::metadata(src) {
         Ok(m) => m,
         Err(_) => return Class::Mismatch,
@@ -56,8 +65,9 @@ fn classify(src: &Path, dst: &Path, _opts: &Options) -> Class {
     if src_meta.is_dir() {
         return Class::Same; // 目录本身不分类
     }
-    let src_mt = src_meta.modified().ok();
-    let dst_mt = dst_meta.modified().ok();
+    // /FFT：比较前将时间戳向下取整到 2 秒（FAT 粒度）
+    let src_mt = src_meta.modified().ok().map(|t| if opts.fft { fft_round(t) } else { t });
+    let dst_mt = dst_meta.modified().ok().map(|t| if opts.fft { fft_round(t) } else { t });
     match (src_mt, dst_mt) {
         (Some(s), Some(d)) if s < d => Class::Older,
         (Some(s), Some(d)) if s > d => Class::Newer,
@@ -306,17 +316,6 @@ fn file_excluded(src: &Path, name: &str, meta: &fs::Metadata, opts: &Options) ->
     false
 }
 
-/// 目录是否被 /XD 排除或 /XJ 排除。
-fn dir_excluded(src: &Path, name: &str, opts: &Options) -> bool {
-    if !opts.xd.is_empty() && matches_pattern(name, &opts.xd) {
-        return true;
-    }
-    if opts.exclude_junction && is_reparse_point(src) {
-        return true;
-    }
-    false
-}
-
 /// 是否重解析点（Windows junction/symlink）。
 /// 注意用 `symlink_metadata`（不跟随），否则 junction 会被解析到目标而识别不出。
 fn is_reparse_point(p: &Path) -> bool {
@@ -453,9 +452,31 @@ fn copy_with_ctx(src: &Path, dst: &Path, ctx: &CopyCtx, animate: bool) -> io::Re
     unreachable!()
 }
 
-/// /ETA 状态（近似实现）。
+/// /ETA 状态：基于已复制字节的平均速率估算剩余时间。
 pub struct EtaState {
     pub copied: u32,
+    pub bytes: u64,
+    pub start: std::time::Instant,
+}
+
+/// /ETA 估算：非首个复制文件显示 `\t\tHH:MM -> HH:MM`。
+/// 用已复制字节的平均速率对当前文件大小估计剩余耗时（原版基于实时吞吐）。
+fn eta_estimate(eta: &mut EtaState, sz: u64) -> Option<String> {
+    eta.bytes += sz;
+    eta.copied += 1;
+    if eta.copied <= 1 {
+        return None;
+    }
+    let elapsed = eta.start.elapsed().as_secs_f64().max(0.001);
+    let rate = eta.bytes as f64 / elapsed;
+    let secs_left = if rate > 0.0 {
+        (sz as f64 / rate).ceil() as u64
+    } else {
+        0
+    };
+    let now = crate::time::fmt_now_hm();
+    let eta_t = crate::time::fmt_hm_after(secs_left);
+    Some(format!("{now} -> {eta_t}"))
 }
 
 /// 单个文件复制任务（/MT 批次内按提交顺序收集）。
@@ -733,16 +754,11 @@ pub fn walk(
                 if copy_with_retry(f, &dst_file, opts, animate).is_ok() {
                     stats.file(COP, 1, sz);
                     *rc |= 1;
-                    // /ETA 近似：非首个复制文件显示 `\t\tHH:MM -> HH:MM`（固定保守速率 500 B/s）
+                    // /ETA：非首个复制文件显示 `\t\tHH:MM -> HH:MM`（基于实测平均速率）
                     let mut eta_str: Option<String> = None;
                     if opts.eta {
                         if let Some(e) = eta.as_deref_mut() {
-                            e.copied += 1;
-                            if e.copied > 1 {
-                                let now = crate::time::fmt_now_hm();
-                                let eta_t = crate::time::fmt_hm_after(sz / 500);
-                                eta_str = Some(format!("{now} -> {eta_t}"));
-                            }
+                            eta_str = eta_estimate(e, sz);
                         }
                     }
                     let eta_part = eta_str.as_ref().map(|e| format!("\t\t{e}")).unwrap_or_default();
@@ -796,8 +812,17 @@ pub fn walk(
     let max_level = opts.lev.unwrap_or(u32::MAX);
     for d in &dirs {
         let name = d.file_name().unwrap_or_default().to_string_lossy();
-        // /XD 排除目录（整棵跳过）；/XJ /XJD 排除 junction 目录
-        if dir_excluded(d, &name, opts) {
+        // /XD 排除目录（整棵跳过）；原版仍计入 Dirs Total（访问但不处理）。
+        // /MT 下 Copied 恒等于 Total 的怪癖同样适用于被排除目录。
+        if !opts.xd.is_empty() && matches_pattern(&name, &opts.xd) {
+            stats.dir(TOT, 1);
+            if mt {
+                stats.dir(COP, 1);
+            }
+            continue;
+        }
+        // /XJ /XJD 排除 junction 目录
+        if (opts.exclude_junction || opts.exclude_junction_dir) && is_reparse_point(d) {
             continue;
         }
         // /LEV:n 限制层级
@@ -858,16 +883,11 @@ fn flush_mt_jobs(
         if ok {
             stats.file(COP, 1, j.sz);
             *rc |= 1;
-            // /ETA 近似：非首个复制文件显示 `\t\tHH:MM -> HH:MM`（固定保守速率 500 B/s）
+            // /ETA：非首个复制文件显示 `\t\tHH:MM -> HH:MM`（基于实测平均速率）
             let mut eta_str: Option<String> = None;
             if opts.eta {
                 if let Some(e) = eta.as_deref_mut() {
-                    e.copied += 1;
-                    if e.copied > 1 {
-                        let now = crate::time::fmt_now_hm();
-                        let eta_t = crate::time::fmt_hm_after(j.sz / 500);
-                        eta_str = Some(format!("{now} -> {eta_t}"));
-                    }
+                    eta_str = eta_estimate(e, j.sz);
                 }
             }
             output_file_line(j.class, j.sz, &j.name, j.ts, opts, false, eta_str.as_deref());

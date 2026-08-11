@@ -1649,6 +1649,7 @@ dependencies = [
 name = "robocopy"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "windows-sys 0.52.0",
  "windowshit-args",
 ]

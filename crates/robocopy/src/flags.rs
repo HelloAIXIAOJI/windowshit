@@ -45,7 +45,7 @@ pub const FLAGS: &[Flag] = &[
     Flag::new("LOG+", Kind::Value),
     Flag::new("UNILOG", Kind::Value),
     Flag::new("UNILOG+", Kind::Value),
-    Flag::new("UNICODE", Kind::Ignore),
+    Flag::new("UNICODE", Kind::Flag),
     // —— 文件选择（阶段 2）——
     Flag::new("A", Kind::Flag),
     Flag::new("M", Kind::Flag),
@@ -67,7 +67,7 @@ pub const FLAGS: &[Flag] = &[
     Flag::new("MINAGE", Kind::Value),
     Flag::new("MAXLAD", Kind::Value),
     Flag::new("MINLAD", Kind::Value),
-    Flag::new("FFT", Kind::Ignore),
+    Flag::new("FFT", Kind::Flag),
     Flag::new("DST", Kind::Ignore),
     Flag::new("XJ", Kind::Flag),
     Flag::new("XJD", Kind::Flag),
@@ -201,13 +201,15 @@ pub struct Options {
     pub exclude_junction: bool,     // /XJ
     pub exclude_junction_file: bool, // /XJF
     pub exclude_junction_dir: bool,  // /XJD
+    pub fft: bool,                  // /FFT：FAT 文件时间（2 秒粒度）
     // 阶段 3：日志与输出控制
     pub show_ts: bool,   // /TS：文件行显示 UTC 时间戳
     pub full_path: bool, // /FP：文件行显示完整源路径
     pub show_bytes: bool, // /BYTES：Options 回显
     pub eta: bool,        // /ETA：文件行尾显示预计完成时间
-    pub log_path: Option<PathBuf>, // /LOG:file 或 /LOG+:file
-    pub log_append: bool,          // /LOG+ 追加
+    pub log_path: Option<PathBuf>, // /LOG:file、/LOG+:file、/UNILOG:file 或 /UNILOG+:file
+    pub log_append: bool,          // /LOG+ /UNILOG+ 追加
+    pub log_unicode: bool,         // /UNILOG /UNILOG+：日志文件以 UTF-16LE 写入
     pub tee: bool,                 // /TEE 双输出
 }
 
@@ -259,12 +261,14 @@ impl Default for Options {
             exclude_junction: false,
             exclude_junction_file: false,
             exclude_junction_dir: false,
+            fft: false,
             show_ts: false,
             full_path: false,
             show_bytes: false,
             eta: false,
             log_path: None,
             log_append: false,
+            log_unicode: false,
             tee: false,
         }
     }

@@ -9,7 +9,7 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-/// 本地时间各部分 (y, m, d, hh, mi, ss)。仅 Windows 取本地时间；其余平台返回 None（用 UTC）。
+/// 本地时间各部分 (y, m, d, hh, mi, ss)。Windows 用 GetLocalTime，Unix 用 localtime_r。
 fn now_local_parts() -> Option<(u64, u64, u64, u64, u64, u64)> {
     #[cfg(windows)]
     {
@@ -31,7 +31,27 @@ fn now_local_parts() -> Option<(u64, u64, u64, u64, u64, u64)> {
     }
     #[cfg(not(windows))]
     {
-        None
+        // Unix：用 libc localtime_r 获取本地时间（避免退化为 UTC）
+        use libc::{localtime_r, time, tm};
+        // SAFETY: 标准 C API，tm 缓冲区由 localtime_r 填充
+        unsafe {
+            let now = time(std::ptr::null_mut());
+            if now == -1 {
+                return None;
+            }
+            let mut t: tm = std::mem::zeroed();
+            if localtime_r(&now, &mut t).is_null() {
+                return None;
+            }
+            Some((
+                (t.tm_year + 1900) as u64,
+                (t.tm_mon + 1) as u64,
+                t.tm_mday as u64,
+                t.tm_hour as u64,
+                t.tm_min as u64,
+                t.tm_sec as u64,
+            ))
+        }
     }
 }
 

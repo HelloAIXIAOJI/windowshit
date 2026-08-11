@@ -121,14 +121,19 @@ fn build_opts(parsed: &Parsed, mt: Option<usize>, xf: Vec<String>, xd: Vec<Strin
         full_path: parsed.flags.contains_key("FP"),
         show_bytes: parsed.flags.contains_key("BYTES"),
         eta: parsed.flags.contains_key("ETA"),
+        // /UNILOG /UNILOG+ 优先于 /LOG /LOG+（Unicode 日志）
         log_path: parsed
             .flags
-            .get("LOG")
+            .get("UNILOG")
+            .or_else(|| parsed.flags.get("UNILOG+"))
+            .or_else(|| parsed.flags.get("LOG"))
             .or_else(|| parsed.flags.get("LOG+"))
             .and_then(|v| *v)
             .map(|s| PathBuf::from(s)),
-        log_append: parsed.flags.contains_key("LOG+"),
+        log_append: parsed.flags.contains_key("LOG+") || parsed.flags.contains_key("UNILOG+"),
+        log_unicode: parsed.flags.contains_key("UNILOG") || parsed.flags.contains_key("UNILOG+"),
         tee: parsed.flags.contains_key("TEE"),
+        fft: parsed.flags.contains_key("FFT"),
     }
 }
 
@@ -243,14 +248,14 @@ fn main() -> ExitCode {
 
     let mut opts = build_opts(&parsed, mt, xf, xd);
 
-    // 初始化日志输出目标（/LOG /LOG+ /TEE）
+    // 初始化日志输出目标（/LOG /LOG+ /UNILOG /UNILOG+ /TEE）
     if let Some(log_path) = &opts.log_path {
-        sink::init(Some((log_path.clone(), opts.log_append)), opts.tee);
+        sink::init(Some((log_path.clone(), opts.log_append)), opts.tee, opts.log_unicode);
         let abs = fs::canonicalize(log_path).unwrap_or_else(|_| log_path.clone());
         let path_str = abs.to_string_lossy().replace('/', "\\");
         sink::announce_log_file(&path_str);
     } else {
-        sink::init(None, false);
+        sink::init(None, false, opts.log_unicode);
     }
 
     // 位置参数：source destination [file...]
@@ -337,7 +342,11 @@ fn main() -> ExitCode {
     // /MT 多线程池（目录内文件并行复制，输出保持有序）
     let pool = opts.mt.map(|_| copy::Pool::new(&opts));
 
-    let mut eta_state = copy::EtaState { copied: 0 };
+    let mut eta_state = copy::EtaState {
+        copied: 0,
+        bytes: 0,
+        start: Instant::now(),
+    };
     copy::walk(
         &src,
         &dst,
