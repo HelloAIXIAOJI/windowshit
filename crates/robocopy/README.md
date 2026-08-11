@@ -50,7 +50,7 @@ ROBOCOPY source destination [file [file]...] [options]
 
 ## 还原的原版行为
 
-- 输出恒为英文（不随系统语言变），`Started` / `Ended` 时间随 locale
+- 输出恒为英文（不随系统语言变），`Started` / `Ended` 时间随 locale（中文下小时无前导零 `2:01:55`、分秒有前导零；日志文件 `2026812 2:02:55` 同样小时无前导零；错误行 `2026/08/12 02:03:16` 小时有前导零）
 - 文件分类：`New File` / `Newer` / `Older` / `Same` / `Changed` / `*EXTRA File` 等，默认"时间戳或大小不同则复制"
 - 目录状态行：`  New Dir          <n>\t<path>`（数字 = 该目录匹配的文件数）
 - Options 行固定顺序回显（`/E` 展开为 `/S /E`，`/MIR` 回显 `/PURGE /MIR`，末尾默认 `/R:1000000 /W:30`）
@@ -73,17 +73,17 @@ ROBOCOPY source destination [file [file]...] [options]
 - `/XJ` 排除 junction（Rust std 在 Windows 对 junction 的 `is_dir()` 返回 false，需用 reparse point 位判断）
 - `/TS`：文件行大小后显示源文件 UTC 时间戳 `YYYY/MM/DD HH:MM:SS`；`/FP` 显示源完整路径；`/V` 的 skipped 行小写分类右对齐 14 宽（`          same`）
 - `/LOG:file`：stdout 只输出 ` Log File : path`，完整输出写入日志（`Started`/`Ended` 用数字格式 `2026811 23:30:49`，不随 locale）；`/LOG+` 追加；`/TEE` 控制台与日志双写
-- `/UNILOG:file` `/UNILOG+:file`：同 `/LOG` 但日志文件写 UTF-16LE（带 BOM），与 UTF-8/ANSI 的 `/LOG` 区分；`/UNICODE` 表示 Unicode 输出，本实现 stdout 恒为 UTF-8，接受开关即等价
+- `/UNILOG:file` `/UNILOG+:file`：同 `/LOG` 但日志文件写 UTF-16LE（带 BOM），与 UTF-8/ANSI 的 `/LOG` 区分；`/UNICODE` 时 stdout 输出 UTF-16LE（带 BOM）
 - `/FFT`：比较前把源/目标 mtime 向下取整到 2 秒（FAT 粒度），对齐原版 FAT 时间补偿
 - `/ETA`：文件行尾 `\t\tHH:MM -> HH:MM`（非首个复制文件显示，预计时间基于已复制字节的实测平均速率估算）
 
 ## 与真原版的已知差异
 
-以下差异已处理：`/FFT` FAT 时间补偿、`/ETA` 实测速率估算、Unix 平台本地时间（libc `localtime_r`）、`/UNILOG` `/UNILOG+` `/UNICODE`、`/XD` 排除目录计入 Dirs Total。剩余差异均为平台固有、原版行为不稳定或有意的设计取舍：
+以下差异已处理：`/FFT` FAT 时间补偿与 Options 位置、`/ETA` 实测速率估算、Unix 平台本地时间（libc `localtime_r`）、`/UNILOG` `/UNILOG+` `/UNICODE`、`/XD` 排除目录计入 Dirs Total、`Started`/`Ended` 小时无前导零、日志时间小时无前导零、`Log File :` 路径无 `\\?\` 前缀。剩余差异均为平台固有、原版行为不稳定或有意的设计取舍：
 
 | 差异 | 说明 |
 | --- | --- |
-| `Started` / `Ended` 行尾 | 原版行尾空格随系统 locale 与字符显示宽度变化，无法在无原版环境下精确复刻；主格式已对齐 |
+| `/UNICODE` 字节级输出 | 原版 `/UNICODE` 的输出编码随 stdout 句柄类型变化（控制台 UTF-16 / 管道 UTF-8 / 文件 UTF-16），极不稳定；本实现统一为 UTF-16LE（带 BOM），符合文档语义 |
 | TTY 进度动画细节 | 已复刻动态百分比（1MB 块、一位小数）；终端捕获工具下 `\r` 渲染方式属终端行为，可能与原版有细微视觉差 |
 | Unix 属性 | `/IA` `/XA` 仅支持 R（只读）；Unix 无 archive / hidden / system 等属性，为平台固有差异 |
 | `/MAXLAD` `/MINLAD` | 已实现；Windows 下最后访问时间更新策略与 NTFS 相关，极端场景可能有差异 |

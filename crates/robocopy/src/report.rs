@@ -183,6 +183,9 @@ fn options_line(files: &[String], opts: &Options) -> String {
     if opts.tee {
         v.push("/TEE".into());
     }
+    if opts.fft {
+        v.push("/FFT".into());
+    }
     // /S /E：/E 展开为 /S /E
     if opts.subdirs_nonempty {
         v.push("/S".into());
@@ -250,9 +253,6 @@ fn options_line(files: &[String], opts: &Options) -> String {
         if opts.exclude_junction_dir {
             v.push("/XJD".into());
         }
-    }
-    if opts.fft {
-        v.push("/FFT".into());
     }
     if opts.archive_move {
         v.push("/M".into());

@@ -56,9 +56,10 @@ fn now_local_parts() -> Option<(u64, u64, u64, u64, u64, u64)> {
 }
 
 /// `2026年8月11日 20:38:22`（Started/Ended 用，原版随 locale）。
+/// 实测原版中文 locale：小时无前导零（`2:01:55`），分秒有前导零。
 pub fn fmt_now_cn() -> String {
     if let Some((y, m, d, hh, mi, ss)) = now_local_parts() {
-        return format!("{y}年{m}月{d}日 {hh:02}:{mi:02}:{ss:02}");
+        return format!("{y}年{m}月{d}日 {hh}:{mi:02}:{ss:02}");
     }
     let secs = now_secs();
     let days = secs / 86400;
@@ -67,7 +68,7 @@ pub fn fmt_now_cn() -> String {
     let hh = rem / 3600;
     let mi = (rem % 3600) / 60;
     let ss = rem % 60;
-    format!("{y}年{m}月{d}日 {hh:02}:{mi:02}:{ss:02}")
+    format!("{y}年{m}月{d}日 {hh}:{mi:02}:{ss:02}")
 }
 
 /// `2026/08/11 20:36:32`（错误行用）。
@@ -86,9 +87,10 @@ pub fn fmt_now_num() -> String {
 }
 
 /// 日志文件时间格式（实测原版）：`2026811 23:30:49`（年/月/日无分隔无前导零，时分秒有）。
+/// 实测原版日志：小时也无前导零（`2026812 2:02:24`）。
 pub fn fmt_now_log() -> String {
     if let Some((y, m, d, hh, mi, ss)) = now_local_parts() {
-        return format!("{y}{m}{d} {hh:02}:{mi:02}:{ss:02}");
+        return format!("{y}{m}{d} {hh}:{mi:02}:{ss:02}");
     }
     let secs = now_secs();
     let days = secs / 86400;
@@ -97,7 +99,7 @@ pub fn fmt_now_log() -> String {
     let hh = rem / 3600;
     let mi = (rem % 3600) / 60;
     let ss = rem % 60;
-    format!("{y}{m}{d} {hh:02}:{mi:02}:{ss:02}")
+    format!("{y}{m}{d} {hh}:{mi:02}:{ss:02}")
 }
 
 /// UNIX 秒 → UTC `YYYY/MM/DD HH:MM:SS`（/TS 时间戳用，原版显示 UTC）。

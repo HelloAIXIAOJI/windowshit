@@ -132,6 +132,7 @@ fn build_opts(parsed: &Parsed, mt: Option<usize>, xf: Vec<String>, xd: Vec<Strin
             .map(|s| PathBuf::from(s)),
         log_append: parsed.flags.contains_key("LOG+") || parsed.flags.contains_key("UNILOG+"),
         log_unicode: parsed.flags.contains_key("UNILOG") || parsed.flags.contains_key("UNILOG+"),
+        unicode: parsed.flags.contains_key("UNICODE"),
         tee: parsed.flags.contains_key("TEE"),
         fft: parsed.flags.contains_key("FFT"),
     }
@@ -250,12 +251,13 @@ fn main() -> ExitCode {
 
     // 初始化日志输出目标（/LOG /LOG+ /UNILOG /UNILOG+ /TEE）
     if let Some(log_path) = &opts.log_path {
-        sink::init(Some((log_path.clone(), opts.log_append)), opts.tee, opts.log_unicode);
-        let abs = fs::canonicalize(log_path).unwrap_or_else(|_| log_path.clone());
+        sink::init(Some((log_path.clone(), opts.log_append)), opts.tee, opts.log_unicode, opts.unicode);
+        // 用 absolutize（相对转绝对）而非 canonicalize，避免 Windows 的 `\\?\` 前缀
+        let abs = absolutize(&log_path.to_string_lossy());
         let path_str = abs.to_string_lossy().replace('/', "\\");
         sink::announce_log_file(&path_str);
     } else {
-        sink::init(None, false, opts.log_unicode);
+        sink::init(None, false, opts.log_unicode, opts.unicode);
     }
 
     // 位置参数：source destination [file...]

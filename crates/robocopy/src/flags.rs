@@ -210,6 +210,7 @@ pub struct Options {
     pub log_path: Option<PathBuf>, // /LOG:file、/LOG+:file、/UNILOG:file 或 /UNILOG+:file
     pub log_append: bool,          // /LOG+ /UNILOG+ 追加
     pub log_unicode: bool,         // /UNILOG /UNILOG+：日志文件以 UTF-16LE 写入
+    pub unicode: bool,             // /UNICODE：stdout 以 UTF-16LE 输出
     pub tee: bool,                 // /TEE 双输出
 }
 
@@ -269,6 +270,7 @@ impl Default for Options {
             log_path: None,
             log_append: false,
             log_unicode: false,
+            unicode: false,
             tee: false,
         }
     }
