@@ -133,9 +133,10 @@ pub fn print_usage() {
     outln!("****  /MIR can DELETE files as well as copy them !");
 }
 
-/// 打印完整帮助（原版 /? 也返回 16）。
+/// 打印完整帮助（原版 /? 也返回 16）。头部 Started 时间实时取当前时间。
 pub fn print_help() {
-    out!("\r\n{HELP}");
+    let help = HELP.replace("{started}", &fmt_now_cn());
+    out!("\r\n{help}");
 }
 
 /// 文件模式展示（多个用空格分隔）。
