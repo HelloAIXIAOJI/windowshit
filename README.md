@@ -1,5 +1,9 @@
 # Windowshit 屎窗
 
+<p align="center">
+  <img src="wsl.png" alt="Windowshit Logo" width="400">
+</p>
+
 ## 这是啥屎？
 
 本项目致力于将 Windows 上的部分命令行驱动的程序（比如 ipconfig 等）通过 Rust 重写，输出与功能尽可能相似，并在 Linux、macOS 甚至 Windows 上运行。致力于让所有人都能吃到Windows的难绷设计。
