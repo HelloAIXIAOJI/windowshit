@@ -1,0 +1,13 @@
+[package]
+name = "robocopy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust 重写的 Windows robocopy.exe（跨平台整活）"
+
+[[bin]]
+name = "robocopy"
+path = "src/main.rs"
+
+[dependencies]
+windowshit-args = { path = "../args" }
