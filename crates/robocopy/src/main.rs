@@ -7,237 +7,90 @@
 //! - /L 仅列出不实际操作
 //! - 文件分类（New / Newer / Older / Same / Tweaked / Changed / Extra / Mismatch）
 //! - 状态行输出、统计表格、位掩码退出码
-//!
-//! 实测对齐的行为（Windows 11 原版，2026-08-11）：
-//! - 无参数：Header + Simple Usage，退出码 16
-//! - 缺 Destination：Header + `ERROR : No Destination Directory Specified.` + Simple Usage，退出码 16
-//! - 源不存在：`2026/08/11 20:36:32 ERROR 2 (0x00000002) Accessing Source Directory ...`，退出码 16
-//! - 目录状态行：`\t  New Dir          2\t<path>`（数字 = 该目录下复制的文件数）
-//! - 文件状态行：`\t    New File  \t\t      10\ta.txt`
-//! - Options 行按固定顺序回显，/MT 仅显式传入时回显，末尾默认 `/R:1000000 /W:30`
-//! - 输出恒为英文（不随系统语言变），Started/Ended 时间随 locale（暂按 UTC）
+
+mod copy;
+mod flags;
+mod report;
+mod time;
+mod util;
 
 use std::env;
 use std::fs;
-use std::io::{self, IsTerminal, Read, Write};
-use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
-use windowshit_args::{parse, Flag, Kind, Parsed, Unknown};
+use windowshit_args::{parse, Parsed, Unknown};
 
-/// 输出一行（行尾 CRLF，对齐原版重定向输出）。
-macro_rules! outln {
-    ($($t:tt)*) => {{
-        use std::io::Write as _;
-        let mut o = std::io::stdout();
-        let _ = write!(o, $($t)*);
-        let _ = o.write_all(b"\r\n");
-    }};
-}
+use crate::flags::{Options, Stats, FLAGS};
+use crate::report::{print_header_with, print_help, print_summary, print_usage};
+use crate::util::{absolutize, display_dir};
 
-/// 原样输出（不追加换行）。
-macro_rules! out {
-    ($($t:tt)*) => {{
-        use std::io::Write as _;
-        let _ = write!(std::io::stdout(), $($t)*);
-    }};
-}
-
-const HELP: &str = include_str!("../help.txt");
-
-const USAGE_HEAD: &str = "       Simple Usage :: ROBOCOPY source destination /MIR\r\n\r\n             source :: Source Directory (drive:\\path or \\\\server\\share\\path).\r\n        destination :: Destination Dir  (drive:\\path or \\\\server\\share\\path).\r\n               /MIR :: Mirror a complete directory tree.\r\n\r\n    For more usage information run ROBOCOPY /?\r\n\r\n";
-
-/// 开关表：阶段 1 实现的收 `Flag`/`Value`，暂不实现的收 `Ignore`（原版存在但本实现不处理）。
-const FLAGS: &[Flag] = &[
-    // —— 复制类 ——
-    Flag::new("S", Kind::Flag),
-    Flag::new("E", Kind::Flag),
-    Flag::new("LEV", Kind::Value),
-    Flag::new("PURGE", Kind::Flag),
-    Flag::new("MIR", Kind::Flag),
-    Flag::new("MOV", Kind::Flag),
-    Flag::new("MOVE", Kind::Flag),
-    Flag::new("CREATE", Kind::Flag),
-    Flag::new("L", Kind::Flag),
-    Flag::new("COPY", Kind::Value),
-    Flag::new("DCOPY", Kind::Value),
-    // —— 重试 ——
-    Flag::new("R", Kind::Value),
-    Flag::new("W", Kind::Value),
-    Flag::new("REG", Kind::Ignore),
-    Flag::new("TBD", Kind::Ignore),
-    Flag::new("LFSM", Kind::Ignore),
-    // —— 日志类 ——
-    Flag::new("NP", Kind::Flag),
-    Flag::new("NFL", Kind::Flag),
-    Flag::new("NDL", Kind::Flag),
-    Flag::new("NS", Kind::Flag),
-    Flag::new("NC", Kind::Flag),
-    Flag::new("NJH", Kind::Flag),
-    Flag::new("NJS", Kind::Flag),
-    Flag::new("V", Kind::Flag),
-    Flag::new("X", Kind::Flag),
-    Flag::new("TS", Kind::Flag),
-    Flag::new("FP", Kind::Flag),
-    Flag::new("BYTES", Kind::Flag),
-    Flag::new("ETA", Kind::Flag),
-    Flag::new("TEE", Kind::Flag),
-    Flag::new("LOG", Kind::Value),
-    Flag::new("LOG+", Kind::Value),
-    Flag::new("UNILOG", Kind::Value),
-    Flag::new("UNILOG+", Kind::Value),
-    Flag::new("UNICODE", Kind::Ignore),
-    // —— 文件选择（阶段 2）——
-    Flag::new("A", Kind::Flag),
-    Flag::new("M", Kind::Flag),
-    Flag::new("IA", Kind::Value),
-    Flag::new("XA", Kind::Value),
-    Flag::new("XF", Kind::Value),
-    Flag::new("XD", Kind::Value),
-    Flag::new("XC", Kind::Flag),
-    Flag::new("XN", Kind::Flag),
-    Flag::new("XO", Kind::Flag),
-    Flag::new("XX", Kind::Flag),
-    Flag::new("XL", Kind::Flag),
-    Flag::new("IS", Kind::Flag),
-    Flag::new("IT", Kind::Flag),
-    Flag::new("IM", Kind::Flag),
-    Flag::new("MAX", Kind::Value),
-    Flag::new("MIN", Kind::Value),
-    Flag::new("MAXAGE", Kind::Value),
-    Flag::new("MINAGE", Kind::Value),
-    Flag::new("MAXLAD", Kind::Value),
-    Flag::new("MINLAD", Kind::Value),
-    Flag::new("FFT", Kind::Ignore),
-    Flag::new("DST", Kind::Ignore),
-    Flag::new("XJ", Kind::Ignore),
-    Flag::new("XJD", Kind::Ignore),
-    Flag::new("XJF", Kind::Ignore),
-    // —— Windows 专属 / 暂不实现 ——
-    Flag::new("Z", Kind::Ignore),
-    Flag::new("B", Kind::Ignore),
-    Flag::new("ZB", Kind::Ignore),
-    Flag::new("J", Kind::Ignore),
-    Flag::new("EFSRAW", Kind::Ignore),
-    Flag::new("FAT", Kind::Ignore),
-    Flag::new("256", Kind::Ignore),
-    Flag::new("SEC", Kind::Ignore),
-    Flag::new("COPYALL", Kind::Ignore),
-    Flag::new("NOCOPY", Kind::Ignore),
-    Flag::new("SECFIX", Kind::Ignore),
-    Flag::new("TIMFIX", Kind::Ignore),
-    Flag::new("NODCOPY", Kind::Ignore),
-    Flag::new("MON", Kind::Ignore),
-    Flag::new("MOT", Kind::Ignore),
-    Flag::new("RH", Kind::Ignore),
-    Flag::new("PF", Kind::Ignore),
-    Flag::new("IPG", Kind::Ignore),
-    Flag::new("SJ", Kind::Ignore),
-    Flag::new("SL", Kind::Ignore),
-    Flag::new("IOMAXSIZE", Kind::Ignore),
-    Flag::new("IORATE", Kind::Ignore),
-    Flag::new("THRESHOLD", Kind::Ignore),
-    Flag::new("NOOFFLOAD", Kind::Ignore),
-    Flag::new("COMPRESS", Kind::Ignore),
-    Flag::new("SPARSE", Kind::Ignore),
-    Flag::new("A+", Kind::Ignore),
-    Flag::new("A-", Kind::Ignore),
-    // —— Job ——
-    Flag::new("JOB", Kind::Ignore),
-    Flag::new("SAVE", Kind::Ignore),
-    Flag::new("QUIT", Kind::Ignore),
-    Flag::new("NOSD", Kind::Ignore),
-    Flag::new("NODD", Kind::Ignore),
-    Flag::new("IF", Kind::Ignore),
-];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Class {
-    New,
-    Newer,
-    Older,
-    Same,
-    Tweaked,
-    Changed,
-    Extra,
-    Mismatch,
-}
-
-impl Class {
-    /// 状态行分类标签（原版固定格式）。
-    fn label(self) -> &'static str {
-        match self {
-            Class::New => "New File",
-            Class::Newer => "Newer",
-            Class::Older => "Older",
-            Class::Same => "Same",
-            Class::Tweaked => "Tweaked",
-            Class::Changed => "Changed",
-            Class::Extra => "*EXTRA File",
-            Class::Mismatch => "*MISMATCH File",
-        }
+/// 解析参数，构造 Options。
+fn build_opts(parsed: &Parsed, mt: Option<usize>) -> Options {
+    let s = parsed.flags.contains_key("S");
+    let e = parsed.flags.contains_key("E");
+    let mir = parsed.flags.contains_key("MIR");
+    let purge = parsed.flags.contains_key("PURGE");
+    let retries = parsed
+        .flags
+        .get("R")
+        .and_then(|v| *v)
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(1_000_000);
+    let wait = parsed
+        .flags
+        .get("W")
+        .and_then(|v| *v)
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(30);
+    Options {
+        subdirs_nonempty: s || e || mir,
+        subdirs_all: e || mir,
+        mirror: mir,
+        purge: purge || mir,
+        move_files: parsed.flags.contains_key("MOV"),
+        move_all: parsed.flags.contains_key("MOVE"),
+        list_only: parsed.flags.contains_key("L"),
+        verbose: parsed.flags.contains_key("V"),
+        report_extra: parsed.flags.contains_key("X"),
+        retries,
+        wait: std::time::Duration::from_secs(wait),
+        mt,
+        files: Vec::new(),
+        no_progress: parsed.flags.contains_key("NP"),
+        no_file_list: parsed.flags.contains_key("NFL"),
+        no_dir_list: parsed.flags.contains_key("NDL"),
+        no_size: parsed.flags.contains_key("NS"),
+        no_class: parsed.flags.contains_key("NC"),
+        no_job_header: parsed.flags.contains_key("NJH"),
+        no_job_summary: parsed.flags.contains_key("NJS"),
+        include_same: parsed.flags.contains_key("IS"),
+        include_tweaked: parsed.flags.contains_key("IT"),
     }
 }
 
-struct Options {
-    subdirs_nonempty: bool, // /S
-    subdirs_all: bool,      // /E
-    mirror: bool,           // /MIR
-    purge: bool,            // /PURGE（含 /MIR 隐含）
-    move_files: bool,       // /MOV
-    move_all: bool,         // /MOVE
-    list_only: bool,        // /L
-    verbose: bool,          // /V
-    report_extra: bool,     // /X
-    retries: u32,           // /R:n（默认 1_000_000）
-    wait: Duration,         // /W:n（默认 30s）
-    mt: Option<usize>,      // /MT[:n]（阶段 1 仅回显，未做多线程）
-    files: Vec<String>,     // 文件模式（默认匹配所有）
-    // 输出控制
-    no_progress: bool,   // /NP
-    no_file_list: bool,  // /NFL
-    no_dir_list: bool,   // /NDL
-    no_size: bool,       // /NS
-    no_class: bool,      // /NC
-    no_job_header: bool, // /NJH
-    no_job_summary: bool, // /NJS
-    include_same: bool,     // /IS：Same 文件也复制
-    include_tweaked: bool,  // /IT：Tweaked 文件也复制
-}
-
-/// 统计列索引。
-const TOT: usize = 0; // Total
-const COP: usize = 1; // Copied
-const MIS: usize = 3; // Mismatch
-const FAI: usize = 4; // FAILED
-const EXT: usize = 5; // Extras
-
-#[derive(Default)]
-struct Stats {
-    dirs: [u64; 6],
-    files: [u64; 6],
-    bytes: [u64; 6],
-}
-
-impl Stats {
-    fn dir(&mut self, col: usize, n: u64) {
-        self.dirs[col] += n;
-    }
-    fn file(&mut self, col: usize, n: u64, bytes: u64) {
-        self.files[col] += n;
-        self.bytes[col] += bytes;
-    }
+/// 源目录不可访问错误行（对齐原版）。
+fn access_error(src: &std::path::Path) -> (String, String) {
+    let msg = format!(
+        "{} ERROR 2 (0x00000002) Accessing Source Directory {}",
+        time::fmt_now_num(),
+        display_dir(src)
+    );
+    let code = if cfg!(windows) {
+        "The system cannot find the file specified.".to_string()
+    } else {
+        "No such file or directory.".to_string()
+    };
+    (msg, code)
 }
 
 fn main() -> ExitCode {
     let raw: Vec<String> = env::args().skip(1).collect();
 
     if raw.iter().any(|a| a == "/?" || a == "-?") {
-        out!("\r\n{HELP}");
+        print_help();
         // 原版 /? 也返回 16（严重错误）
-        return ExitCode::from(16);
+        return ExitCode::from(16u8);
     }
 
     // 预提取 /MT 或 /MT:n（可选值形态，公共库不支持）
@@ -275,14 +128,24 @@ fn main() -> ExitCode {
     let files: Vec<String> = paths.map(|s| s.to_string()).collect();
     opts.files = files.clone();
 
-    if src_raw.is_none() {
-        // 无参数：Header + Simple Usage
-        if !opts.no_job_header {
-            out!("\r\n");
-            print_header_with(None, None, &[], &opts, true);
-        }
+    // 完全无参数：Header + Simple Usage
+    if raw.is_empty() {
+        crate::out!("\r\n");
+        print_header_with(None, None, &[], &opts, true);
         print_usage();
-        return ExitCode::from(16);
+        return ExitCode::from(16u8);
+    }
+
+    // 有参数但缺 source
+    if src_raw.is_none() {
+        crate::out!("\r\n");
+        if !opts.no_job_header {
+            print_header_with(None, None, &files, &opts, false);
+            crate::outln!("\r\n------------------------------------------------------------------------------\r\n");
+        }
+        crate::outln!("ERROR : No Source Directory Specified.\r\n");
+        print_usage();
+        return ExitCode::from(16u8);
     }
 
     let src = absolutize(src_raw.unwrap());
@@ -290,30 +153,30 @@ fn main() -> ExitCode {
     // 缺 destination
     if dst_raw.is_none() {
         if !opts.no_job_header {
-            out!("\r\n");
+            crate::out!("\r\n");
             print_header_with(Some(&src), None, &files, &opts, false);
-            outln!("\r\n------------------------------------------------------------------------------\r\n");
+            crate::outln!("\r\n------------------------------------------------------------------------------\r\n");
         }
-        outln!("ERROR : No Destination Directory Specified.\r\n");
+        crate::outln!("ERROR : No Destination Directory Specified.\r\n");
         print_usage();
-        return ExitCode::from(16);
+        return ExitCode::from(16u8);
     }
 
     let dst = absolutize(dst_raw.unwrap());
 
     // 正常流程
     if !opts.no_job_header {
-        out!("\r\n");
+        crate::out!("\r\n");
         print_header_with(Some(&src), Some(&dst), &files, &opts, false);
-        outln!("\r\n------------------------------------------------------------------------------\r\n");
+        crate::outln!("\r\n------------------------------------------------------------------------------\r\n");
     }
 
     // 源目录不可访问
     if !src.is_dir() {
         let (msg, code) = access_error(&src);
-        outln!("{msg}");
-        outln!("{code}\r");
-        return ExitCode::from(16);
+        crate::outln!("{msg}");
+        crate::outln!("{code}\r");
+        return ExitCode::from(16u8);
     }
 
     let mut stats = Stats::default();
@@ -324,961 +187,19 @@ fn main() -> ExitCode {
     let dst_existed = dst.exists();
     if !opts.list_only && !dst_existed {
         if fs::create_dir_all(&dst).is_ok() {
-            stats.dir(COP, 1);
+            stats.dir(flags::COP, 1);
         } else {
-            stats.dir(FAI, 1);
+            stats.dir(flags::FAI, 1);
             rc |= 8;
         }
     }
 
-    walk(&src, &dst, &opts, &mut stats, &mut rc, !dst_existed);
+    copy::walk(&src, &dst, &opts, &mut stats, &mut rc, !dst_existed);
 
     if !opts.no_job_summary {
-        outln!("\r\n------------------------------------------------------------------------------\r\n");
+        crate::outln!("\r\n------------------------------------------------------------------------------\r\n");
         print_summary(&stats, start);
     }
 
     ExitCode::from(rc as u8)
-}
-
-fn build_opts(parsed: &Parsed, mt: Option<usize>) -> Options {
-    let s = parsed.flags.contains_key("S");
-    let e = parsed.flags.contains_key("E");
-    let mir = parsed.flags.contains_key("MIR");
-    let purge = parsed.flags.contains_key("PURGE");
-    let retries = parsed
-        .flags
-        .get("R")
-        .and_then(|v| *v)
-        .and_then(|v| v.parse::<u32>().ok())
-        .unwrap_or(1_000_000);
-    let wait = parsed
-        .flags
-        .get("W")
-        .and_then(|v| *v)
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(30);
-    Options {
-        subdirs_nonempty: s || e || mir,
-        subdirs_all: e || mir,
-        mirror: mir,
-        purge: purge || mir,
-        move_files: parsed.flags.contains_key("MOV"),
-        move_all: parsed.flags.contains_key("MOVE"),
-        list_only: parsed.flags.contains_key("L"),
-        verbose: parsed.flags.contains_key("V"),
-        report_extra: parsed.flags.contains_key("X"),
-        retries,
-        wait: Duration::from_secs(wait),
-        mt,
-        files: Vec::new(),
-        no_progress: parsed.flags.contains_key("NP"),
-        no_file_list: parsed.flags.contains_key("NFL"),
-        no_dir_list: parsed.flags.contains_key("NDL"),
-        no_size: parsed.flags.contains_key("NS"),
-        no_class: parsed.flags.contains_key("NC"),
-        no_job_header: parsed.flags.contains_key("NJH"),
-        no_job_summary: parsed.flags.contains_key("NJS"),
-        include_same: parsed.flags.contains_key("IS"),
-        include_tweaked: parsed.flags.contains_key("IT"),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Header / Options 回显
-// ---------------------------------------------------------------------------
-
-fn print_header_with(
-    src: Option<&PathBuf>,
-    dst: Option<&PathBuf>,
-    files: &[String],
-    opts: &Options,
-    simple: bool,
-) {
-    outln!("-------------------------------------------------------------------------------");
-    outln!("{:<81}", "   ROBOCOPY     ::     Robust File Copy for Windows");
-    outln!("-------------------------------------------------------------------------------");
-    outln!("\r\n  Started : {}", fmt_now_cn());
-    if !simple {
-        if let Some(s) = src {
-            outln!("{:>11} {}", "Source :", display_dir(s));
-        }
-        match dst {
-            Some(d) => outln!("{:>11} {}", "Dest :", display_dir(d)),
-            None => outln!("{:>11} ", "Dest -"),
-        }
-        outln!("\r\n{:>11} {}", "Files :", files_mode(files));
-        outln!("\t    ");
-        outln!("{:>11} {} ", "Options :", options_line(files, opts));
-    }
-}
-
-/// 文件模式回显：默认 `*.*`。
-fn files_mode(files: &[String]) -> String {
-    if files.is_empty() {
-        "*.*".to_string()
-    } else {
-        files.join(" ")
-    }
-}
-
-/// Options 行回显，固定顺序（实测原版 2026-08-11）。
-fn options_line(files: &[String], opts: &Options) -> String {
-    let mut v: Vec<String> = vec![files_mode(files)];
-    if opts.verbose {
-        v.push("/V".into());
-    }
-    if opts.report_extra {
-        v.push("/X".into());
-    }
-    if opts.no_size {
-        v.push("/NS".into());
-    }
-    if opts.no_class {
-        v.push("/NC".into());
-    }
-    if opts.no_job_summary {
-        v.push("/NJS".into());
-    }
-    if opts.no_job_header {
-        v.push("/NJH".into());
-    }
-    if opts.list_only {
-        v.push("/L".into());
-    }
-    // /S /E：/E 展开为 /S /E
-    if opts.subdirs_nonempty {
-        v.push("/S".into());
-    }
-    if opts.subdirs_all {
-        v.push("/E".into());
-    }
-    v.push("/DCOPY:DA".into());
-    v.push("/COPY:DAT".into());
-    if opts.move_all {
-        v.push("/MOVE".into());
-    }
-    if opts.move_files && !opts.move_all {
-        v.push("/MOV".into());
-    }
-    if opts.purge {
-        v.push("/PURGE".into());
-    }
-    if opts.mirror {
-        v.push("/MIR".into());
-    }
-    if opts.no_progress {
-        v.push("/NP".into());
-    }
-    if opts.include_same {
-        v.push("/IS".into());
-    }
-    if opts.include_tweaked {
-        v.push("/IT".into());
-    }
-    if let Some(mt) = opts.mt {
-        v.push(format!("/MT:{mt}"));
-    }
-    v.push(format!("/R:{}", opts.retries));
-    v.push(format!("/W:{}", opts.wait.as_secs()));
-    v.join(" ")
-}
-
-fn print_usage() {
-    out!("{USAGE_HEAD}");
-    outln!("{}", " ".repeat(58));
-    outln!("****  /MIR can DELETE files as well as copy them !");
-}
-
-// ---------------------------------------------------------------------------
-// 遍历 / 分类 / 复制
-// ---------------------------------------------------------------------------
-
-/// 递归遍历 src 目录。`new_dir`：目标目录为本次新建（显示 `New Dir`）。`rc` 累积退出码标志。
-fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut u32, new_dir: bool) {
-    let entries = match fs::read_dir(src) {
-        Ok(e) => e,
-        Err(_) => {
-            stats.dir(FAI, 1);
-            *rc |= 8;
-            return;
-        }
-    };
-
-    let mut files: Vec<PathBuf> = Vec::new();
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    for e in entries.flatten() {
-        let p = e.path();
-        if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            dirs.push(p);
-        } else {
-            files.push(p);
-        }
-    }
-    files.sort();
-    dirs.sort();
-
-    stats.dir(TOT, 1); // 每个访问的目录计入 Total
-
-    // 第一遍：分类文件，统计本目录匹配的文件数（供目录行数字，含跳过的）
-    let mut matched_count: u64 = 0;
-    let mut plan: Vec<(PathBuf, Class)> = Vec::new();
-    for f in &files {
-        let name = f.file_name().unwrap_or_default().to_string_lossy();
-        if !matches_pattern(&name, &opts.files) {
-            continue;
-        }
-        matched_count += 1;
-        let dst_file = dst.join(f.file_name().unwrap());
-        let class = classify(f, &dst_file, opts);
-        plan.push((f.clone(), class));
-    }
-
-    // 目录状态行
-    if !opts.no_dir_list {
-        let field = if new_dir {
-            dir_class_field("New Dir")
-        } else {
-            " ".repeat(19)
-        };
-        outln!("\t{field}{matched_count}\t{}", display_dir(src));
-    }
-
-    // 处理文件
-    for (f, class) in &plan {
-        let dst_file = dst.join(f.file_name().unwrap());
-        let name = f.file_name().unwrap_or_default().to_string_lossy().to_string();
-        let sz = f.metadata().map(|m| m.len()).unwrap_or(0);
-        match class_action(*class, opts) {
-            Action::Copy => {
-                stats.file(TOT, 1, sz);
-                if opts.list_only {
-                    stats.file(COP, 1, sz);
-                    *rc |= 1;
-                    output_file_line(*class, sz, &name, opts, false);
-                    continue;
-                }
-                // 是否动画进度：TTY 且未关进度、未关文件列表
-                let animate = !opts.no_progress && !opts.no_file_list && io::stdout().is_terminal();
-                if animate {
-                    // 文件行先不带换行打印，复制过程动态刷新百分比
-                    out!("\t{}\t\t{}\t{}", field_str(*class, opts), sz_str(sz, opts), name);
-                }
-                if copy_with_retry(f, &dst_file, opts, animate).is_ok() {
-                    stats.file(COP, 1, sz);
-                    *rc |= 1;
-                    if animate {
-                        out!("\r100%  \r\n");
-                    } else {
-                        // 非 TTY：一次性进度行（对齐原版重定向字节 `name\r100%  \r\n`）
-                        output_file_line(*class, sz, &name, opts, !opts.no_progress && !opts.no_file_list);
-                    }
-                } else {
-                    stats.file(FAI, 1, sz);
-                    *rc |= 8;
-                    if animate {
-                        out!("\r\n"); // 失败补换行
-                    } else {
-                        output_file_line(*class, sz, &name, opts, false);
-                    }
-                }
-                if opts.move_files || opts.move_all {
-                    let _ = fs::remove_file(f);
-                }
-            }
-            Action::Skip => {
-                stats.file(TOT, 1, sz);
-                if opts.verbose {
-                    output_file_line(*class, sz, &name, opts, false);
-                }
-            }
-            Action::Mismatch => {
-                stats.file(TOT, 1, sz);
-                stats.file(MIS, 1, sz);
-                *rc |= 4;
-                output_file_line(Class::Mismatch, sz, &name, opts, false);
-            }
-        }
-    }
-
-    // extra 处理（目标中存在而源中没有的）—— 原版在该目录文件处理完后立即输出
-    if let Ok(entries) = fs::read_dir(dst) {
-        let mut extra_files: Vec<PathBuf> = Vec::new();
-        let mut extra_dirs: Vec<PathBuf> = Vec::new();
-        for e in entries.flatten() {
-            let p = e.path();
-            let name = e.file_name();
-            let in_src = files.iter().any(|f| f.file_name() == Some(name.as_os_str()))
-                || dirs.iter().any(|d| d.file_name() == Some(name.as_os_str()));
-            if in_src {
-                continue;
-            }
-            if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                extra_dirs.push(p);
-            } else {
-                extra_files.push(p);
-            }
-        }
-        extra_files.sort();
-        extra_dirs.sort();
-
-        if opts.purge {
-            for ef in &extra_files {
-                let name = ef.file_name().unwrap_or_default().to_string_lossy();
-                let sz = ef.metadata().map(|m| m.len()).unwrap_or(0);
-                if !opts.list_only && fs::remove_file(ef).is_ok() {
-                    stats.file(EXT, 1, sz);
-                    *rc |= 2;
-                    output_extra_file_line(&name, sz, opts);
-                }
-            }
-            for ed in &extra_dirs {
-                if !opts.list_only && remove_dir_all_best(ed) {
-                    stats.dir(EXT, 1);
-                    *rc |= 2;
-                    if !opts.no_dir_list {
-                        outln!("\t{}\t{}", dir_class_field("*EXTRA Dir"), display_dir(ed));
-                    }
-                }
-            }
-        } else if opts.report_extra {
-            for ef in &extra_files {
-                let name = ef.file_name().unwrap_or_default().to_string_lossy();
-                let sz = ef.metadata().map(|m| m.len()).unwrap_or(0);
-                output_extra_file_line(&name, sz, opts);
-            }
-        }
-    }
-
-    // 递归子目录
-    for d in &dirs {
-        let dst_dir = dst.join(d.file_name().unwrap());
-        let empty = is_dir_empty(d);
-        let need = if opts.subdirs_all {
-            true // /E /MIR：含空目录
-        } else if opts.subdirs_nonempty && !empty {
-            true // /S：非空目录
-        } else {
-            false
-        };
-        if !need {
-            continue;
-        }
-        let dst_dir_existed = dst_dir.exists();
-        if !opts.list_only && !dst_dir_existed {
-            if fs::create_dir_all(&dst_dir).is_ok() {
-                stats.dir(COP, 1);
-            } else {
-                stats.dir(FAI, 1);
-                *rc |= 8;
-            }
-        }
-        // /L 不创建目录，但目录在目标中不存在仍算 New Dir
-        walk(d, &dst_dir, opts, stats, rc, !dst_dir_existed);
-    }
-}
-
-/// 文件分类（源文件已存在，dst 路径为目标）。
-fn classify(src_file: &Path, dst_file: &Path, opts: &Options) -> Class {
-    let _ = opts;
-    let dst_meta = match fs::metadata(dst_file) {
-        Ok(m) => m,
-        Err(_) => return Class::New, // 目标不存在
-    };
-    if dst_meta.is_dir() {
-        return Class::Mismatch; // 源是文件、目标是目录
-    }
-    let src_meta = match fs::metadata(src_file) {
-        Ok(m) => m,
-        Err(_) => return Class::New,
-    };
-    let src_mt = src_meta.modified().ok();
-    let dst_mt = dst_meta.modified().ok();
-
-    match (src_mt, dst_mt) {
-        (Some(s), Some(d)) if s != d => {
-            if s > d {
-                Class::Newer
-            } else {
-                Class::Older
-            }
-        }
-        _ => {
-            let src_sz = src_meta.len();
-            let dst_sz = dst_meta.len();
-            if src_sz != dst_sz {
-                Class::Changed
-            } else if !attrs_equal(src_file, dst_file) {
-                // 属性不同 → Tweaked（/IT 才复制）
-                Class::Tweaked
-            } else {
-                Class::Same
-            }
-        }
-    }
-}
-
-/// 属性比较：Windows 用 GetFileAttributesW 完整属性位，Unix 比较只读位。
-fn attrs_equal(src: &Path, dst: &Path) -> bool {
-    #[cfg(windows)]
-    {
-        file_attrs(src) == file_attrs(dst)
-    }
-    #[cfg(not(windows))]
-    {
-        let s = fs::metadata(src).map(|m| m.permissions().readonly()).unwrap_or(false);
-        let d = fs::metadata(dst).map(|m| m.permissions().readonly()).unwrap_or(false);
-        s == d
-    }
-}
-
-/// Windows 文件属性（失败时返回 0，避免误判 Tweaked）。
-#[cfg(windows)]
-fn file_attrs(p: &Path) -> u32 {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::GetFileAttributesW;
-    let w: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-    // SAFETY: 标准 API，缓冲区正确
-    unsafe {
-        let a = GetFileAttributesW(w.as_ptr());
-        if a == u32::MAX {
-            0
-        } else {
-            a
-        }
-    }
-}
-
-#[derive(PartialEq, Eq)]
-enum Action {
-    Copy,
-    Skip,
-    Mismatch,
-}
-
-fn class_action(class: Class, opts: &Options) -> Action {
-    match class {
-        // 时间戳或大小不同 → 复制
-        Class::New | Class::Newer | Class::Older | Class::Changed => Action::Copy,
-        // /IS：Same 也复制；/IT：Tweaked 也复制
-        Class::Same if opts.include_same => Action::Copy,
-        Class::Tweaked if opts.include_tweaked => Action::Copy,
-        Class::Same | Class::Tweaked => Action::Skip,
-        Class::Extra | Class::Mismatch => Action::Mismatch,
-    }
-}
-
-/// 复制缓冲大小（1 MiB）。
-const BUF_SIZE: usize = 1024 * 1024;
-
-/// 逐块复制文件。`animate=true` 时每块后输出 `\rNN.N%`（TTY 动态进度，对齐原版一位小数）。
-fn copy_streaming(src: &Path, dst: &Path, animate: bool) -> io::Result<()> {
-    let mut reader = fs::File::open(src)?;
-    let mut writer = fs::File::create(dst)?;
-    let total = reader.metadata().map(|m| m.len()).unwrap_or(0);
-    let mut buf = vec![0u8; BUF_SIZE];
-    let mut copied: u64 = 0;
-    loop {
-        let n = reader.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        writer.write_all(&buf[..n])?;
-        copied += n as u64;
-        if animate && total > 0 {
-            let pct = copied as f64 / total as f64 * 100.0;
-            // 原版格式：`3.1%`，100 时为 `100%`，左对齐 6 宽
-            let s = if pct >= 99.95 {
-                "100%".to_string()
-            } else {
-                format!("{pct:.1}%")
-            };
-            out!("\r{:<6}", s);
-        }
-    }
-    Ok(())
-}
-
-/// 复制文件，带 /R /W 重试。
-/// 对齐原版 /COPY:DAT：复制前清除目标只读位（否则覆盖会失败且无限重试），
-/// 复制后设置目标 mtime 与属性 = 源（这样二次运行分类为 Same）。
-fn copy_with_retry(src: &Path, dst: &Path, opts: &Options, animate: bool) -> io::Result<()> {
-    for i in 0..=opts.retries {
-        // 目标存在且只读时先清除只读位（原版行为）
-        clear_readonly(dst);
-        match copy_streaming(src, dst, animate) {
-            Ok(_) => {
-                // 还原源文件修改时间（原版行为：二次运行时间戳相同 → Same 跳过）
-                if let Ok(sm) = fs::metadata(src) {
-                    if let Ok(mt) = sm.modified() {
-                        let f = fs::File::options().write(true).open(dst)?;
-                        let _ = f.set_modified(mt);
-                    }
-                }
-                // 复制后属性 = 源属性（/COPY:DA 的 A 部分）
-                copy_attrs(src, dst);
-                return Ok(());
-            }
-            Err(_e) if i < opts.retries => thread::sleep(opts.wait),
-            Err(e) => return Err(e),
-        }
-    }
-    unreachable!()
-}
-
-/// 清除目标文件只读位（若存在且只读）。
-fn clear_readonly(p: &Path) {
-    #[cfg(windows)]
-    {
-        let a = file_attrs(p);
-        if a & 0x1 != 0 {
-            set_file_attrs(p, a & !0x1);
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        if let Ok(m) = fs::metadata(p) {
-            if m.permissions().readonly() {
-                let mut perms = m.permissions();
-                perms.set_readonly(false);
-                let _ = fs::set_permissions(p, perms);
-            }
-        }
-    }
-}
-
-/// 复制源文件属性到目标（仅当前实现可表示的位）。
-fn copy_attrs(src: &Path, dst: &Path) {
-    #[cfg(windows)]
-    {
-        let a = file_attrs(src);
-        if a != 0 {
-            set_file_attrs(dst, a);
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        if let Ok(m) = fs::metadata(src) {
-            let _ = fs::set_permissions(dst, m.permissions());
-        }
-    }
-}
-
-/// 设置 Windows 文件属性。
-#[cfg(windows)]
-fn set_file_attrs(p: &Path, attrs: u32) {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::SetFileAttributesW;
-    let w: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-    // SAFETY: 标准 API，缓冲区正确
-    unsafe {
-        let _ = SetFileAttributesW(w.as_ptr(), attrs);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 状态行输出
-// ---------------------------------------------------------------------------
-
-/// 文件分类字段：`    New File  `（4 缩进 + 分类左对齐 10 字符）；`*EXTRA File` 特殊（2 缩进）。
-fn file_class_field(class: Class) -> String {
-    if class == Class::Extra || class == Class::Mismatch {
-        format!("  {:<12}", class.label())
-    } else {
-        format!("    {:<10}", class.label())
-    }
-}
-
-/// 目录分类字段：`  New Dir          `（2 缩进 + 分类左对齐 17 字符 = 19 宽）。
-fn dir_class_field(class: &str) -> String {
-    format!("  {class:<17}")
-}
-
-/// 文件状态行的分类字段。
-fn field_str(class: Class, opts: &Options) -> String {
-    if opts.no_class {
-        " ".repeat(14)
-    } else {
-        file_class_field(class)
-    }
-}
-
-/// 文件状态行的大小字段（对齐原版：<1024 字节数，否则 `32.0 m` 人类可读，右对齐 8）。
-fn sz_str(size: u64, opts: &Options) -> String {
-    if opts.no_size {
-        String::new()
-    } else {
-        format!("{:>8}", fmt_bytes(size))
-    }
-}
-
-/// 文件状态行。`progress=true` 时模拟原版重定向：文件行后 `\r` 回车再写 `100%  `。
-fn output_file_line(class: Class, size: u64, name: &str, opts: &Options, progress: bool) {
-    if opts.no_file_list {
-        return;
-    }
-    let line = format!("\t{}\t\t{}\t{}", field_str(class, opts), sz_str(size, opts), name);
-    if progress {
-        out!("{line}\r100%  \r\n");
-    } else {
-        outln!("{line}");
-    }
-}
-
-fn output_extra_file_line(name: &str, size: u64, opts: &Options) {
-    if opts.no_file_list {
-        return;
-    }
-    let field = if opts.no_class {
-        " ".repeat(14)
-    } else {
-        file_class_field(Class::Extra)
-    };
-    let sz = if opts.no_size {
-        String::new()
-    } else {
-        format!("{:>8}", size)
-    };
-    outln!("\t{field}\t\t{sz}\t{name}");
-}
-
-// ---------------------------------------------------------------------------
-// 统计表格
-// ---------------------------------------------------------------------------
-
-fn print_summary(stats: &Stats, start: Instant) {
-    outln!(
-        "{:>20}{:>10}{:>10}{:>10}{:>10}{:>10}",
-        "Total", "Copied", "Skipped", "Mismatch", "FAILED", "Extras"
-    );
-    let d = stats.dirs;
-    let f = stats.files;
-    let b = stats.bytes;
-    let d_skip = d[TOT].saturating_sub(d[COP] + d[MIS] + d[FAI]);
-    let f_skip = f[TOT].saturating_sub(f[COP] + f[MIS] + f[FAI]);
-    let b_skip = b[TOT].saturating_sub(b[COP] + b[MIS] + b[FAI]);
-    outln!(
-        "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
-        "Dirs :", d[TOT], d[COP], d_skip, d[MIS], d[FAI], d[EXT]
-    );
-    outln!(
-        "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
-        "Files :", f[TOT], f[COP], f_skip, f[MIS], f[FAI], f[EXT]
-    );
-    outln!(
-        "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
-        "Bytes :",
-        fmt_bytes_sum(b[TOT]),
-        fmt_bytes_sum(b[COP]),
-        fmt_bytes_sum(b_skip),
-        fmt_bytes_sum(b[MIS]),
-        fmt_bytes_sum(b[FAI]),
-        fmt_bytes_sum(b[EXT])
-    );
-    let elapsed = start.elapsed().as_secs();
-    // Times 行与其它行列宽一致（10），小时无前导零
-    outln!(
-        "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
-        "Times :",
-        fmt_duration(elapsed),
-        fmt_duration(elapsed),
-        "",
-        "",
-        fmt_duration(0),
-        fmt_duration(0)
-    );
-    // Speed（数字右对齐 23，MegaBytes/min 千位分隔三位小数）
-    let secs = start.elapsed().as_secs_f64();
-    let copied_bytes = b[COP] as f64;
-    if secs > 0.0 && copied_bytes > 0.0 {
-        let bps = copied_bytes / secs;
-        let mbpm = bps / 1048576.0 * 60.0;
-        outln!("\r\n\r\n{:>10} {:>23} Bytes/sec.", "Speed :", thousands(bps.round() as u64));
-        outln!("{:>10} {:>23} MegaBytes/min.", "Speed :", thousands_decimal(mbpm, 3));
-    }
-    outln!("{:>10} {}", "Ended :", fmt_now_cn());
-    outln!("");
-}
-
-/// 文件大小格式化（文件状态行用）：<1024 字节数，否则 `{:.1} {unit}`（小写 k/m/g/t）。
-fn fmt_bytes(n: u64) -> String {
-    if n < 1024 {
-        n.to_string()
-    } else {
-        let units = ["k", "m", "g", "t"];
-        let mut v = n as f64;
-        let mut u = 0;
-        while v >= 1024.0 && u < units.len() {
-            v /= 1024.0;
-            u += 1;
-        }
-        // u=1→k, u=2→m, u=3→g, u=4→t
-        format!("{v:.1} {}", units[u.saturating_sub(1)])
-    }
-}
-
-/// 文件大小格式化（summary 统计表用）：<1024 字节数，否则 `{:.2} {unit}`。
-fn fmt_bytes_sum(n: u64) -> String {
-    if n < 1024 {
-        n.to_string()
-    } else {
-        let units = ["k", "m", "g", "t"];
-        let mut v = n as f64;
-        let mut u = 0;
-        while v >= 1024.0 && u < units.len() {
-            v /= 1024.0;
-            u += 1;
-        }
-        format!("{v:.2} {}", units[u.saturating_sub(1)])
-    }
-}
-
-fn fmt_duration(secs: u64) -> String {
-    let h = secs / 3600;
-    let m = (secs % 3600) / 60;
-    let s = secs % 60;
-    format!("{h}:{m:02}:{s:02}")
-}
-
-/// 千位分隔。
-fn thousands(n: u64) -> String {
-    let s = n.to_string();
-    let mut out = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
-}
-
-/// 千位分隔 + 固定小数位（整数部分千位分隔，小数位保留）。
-fn thousands_decimal(x: f64, precision: usize) -> String {
-    let s = format!("{x:.precision$}");
-    match s.split_once('.') {
-        Some((int, frac)) => {
-            let int_part: u64 = if int.is_empty() {
-                0
-            } else {
-                int.parse().unwrap_or(0)
-            };
-            format!("{},{frac}", thousands(int_part))
-        }
-        None => thousands(s.parse().unwrap_or(0)),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 工具函数
-// ---------------------------------------------------------------------------
-
-fn matches_pattern(name: &str, patterns: &[String]) -> bool {
-    if patterns.is_empty() {
-        return true; // 默认匹配所有
-    }
-    patterns.iter().any(|p| p == "*.*" || wild_match(p, name))
-}
-
-/// 通配符匹配（* 和 ?，大小写不敏感）。
-fn wild_match(pattern: &str, name: &str) -> bool {
-    fn bytes(p: &[u8], n: &[u8]) -> bool {
-        if p.is_empty() && n.is_empty() {
-            return true;
-        }
-        if let Some(&c) = p.first() {
-            if c == b'*' {
-                return bytes(&p[1..], n) || (!n.is_empty() && bytes(p, &n[1..]));
-            }
-        }
-        if let (Some(&c), Some(&nc)) = (p.first(), n.first()) {
-            if c == b'?' || c == nc {
-                return bytes(&p[1..], &n[1..]);
-            }
-        }
-        false
-    }
-    bytes(
-        &pattern.to_lowercase().into_bytes(),
-        &name.to_lowercase().into_bytes(),
-    )
-}
-
-/// 目录是否为空。
-fn is_dir_empty(p: &Path) -> bool {
-    match fs::read_dir(p) {
-        Ok(mut it) => it.next().is_none(),
-        Err(_) => true,
-    }
-}
-
-/// 递归删除目录（尽力）。
-fn remove_dir_all_best(p: &Path) -> bool {
-    let mut ok = true;
-    if let Ok(entries) = fs::read_dir(p) {
-        for e in entries.flatten() {
-            let path = e.path();
-            if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                if !remove_dir_all_best(&path) {
-                    ok = false;
-                }
-            } else if fs::remove_file(&path).is_err() {
-                ok = false;
-            }
-        }
-    }
-    if fs::remove_dir(p).is_err() {
-        ok = false;
-    }
-    ok
-}
-
-/// 相对路径 → 绝对路径。
-fn absolutize(p: &str) -> PathBuf {
-    let path = PathBuf::from(p);
-    if path.is_absolute() {
-        path
-    } else if let Ok(cwd) = env::current_dir() {
-        cwd.join(path)
-    } else {
-        path
-    }
-}
-
-/// 目录显示路径（统一尾分隔符）。
-fn display_dir(p: &Path) -> String {
-    let s = p.to_string_lossy().to_string();
-    let sep = std::path::MAIN_SEPARATOR;
-    if s.ends_with(sep) || s.ends_with('/') {
-        s
-    } else {
-        format!("{s}{sep}")
-    }
-}
-
-/// 源目录不可访问时的错误输出。
-fn access_error(src: &Path) -> (String, String) {
-    let msg = format!(
-        "{} ERROR 2 (0x00000002) Accessing Source Directory {}",
-        fmt_now_num(),
-        display_dir(src)
-    );
-    let code = if cfg!(windows) {
-        "The system cannot find the file specified.".to_string()
-    } else {
-        "No such file or directory.".to_string()
-    };
-    (msg, code)
-}
-
-// ---------------------------------------------------------------------------
-// 时间（Windows 本地时间，其余平台 UTC）
-// ---------------------------------------------------------------------------
-
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
-/// 本地时间各部分 (y, m, d, hh, mi, ss)。仅 Windows 取本地时间；其余平台返回 None（用 UTC）。
-fn now_local_parts() -> Option<(u64, u64, u64, u64, u64, u64)> {
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::Foundation::SYSTEMTIME;
-        use windows_sys::Win32::System::SystemInformation::GetLocalTime;
-        // SAFETY: 标准 API，缓冲区由系统填充
-        unsafe {
-            let mut st: SYSTEMTIME = std::mem::zeroed();
-            GetLocalTime(&mut st);
-            Some((
-                st.wYear as u64,
-                st.wMonth as u64,
-                st.wDay as u64,
-                st.wHour as u64,
-                st.wMinute as u64,
-                st.wSecond as u64,
-            ))
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        None
-    }
-}
-
-/// `2026年8月11日 20:38:22`（Started/Ended 用，原版随 locale）。
-fn fmt_now_cn() -> String {
-    if let Some((y, m, d, hh, mi, ss)) = now_local_parts() {
-        return format!("{y}年{m}月{d}日 {hh:02}:{mi:02}:{ss:02}");
-    }
-    let secs = now_secs();
-    let days = secs / 86400;
-    let (y, m, d) = days_to_ymd(days);
-    let rem = secs % 86400;
-    let hh = rem / 3600;
-    let mi = (rem % 3600) / 60;
-    let ss = rem % 60;
-    format!("{y}年{m}月{d}日 {hh:02}:{mi:02}:{ss:02}")
-}
-
-/// `2026/08/11 20:36:32`（错误行用）。
-fn fmt_now_num() -> String {
-    if let Some((y, m, d, hh, mi, ss)) = now_local_parts() {
-        return format!("{y:04}/{m:02}/{d:02} {hh:02}:{mi:02}:{ss:02}");
-    }
-    let secs = now_secs();
-    let days = secs / 86400;
-    let (y, m, d) = days_to_ymd(days);
-    let rem = secs % 86400;
-    let hh = rem / 3600;
-    let mi = (rem % 3600) / 60;
-    let ss = rem % 60;
-    format!("{y:04}/{m:02}/{d:02} {hh:02}:{mi:02}:{ss:02}")
-}
-
-/// 从 UNIX 天数转换日期。
-fn days_to_ymd(days: u64) -> (u64, u64, u64) {
-    let mut y = 1970u64;
-    let mut remaining = days;
-    loop {
-        let ydays = if is_leap(y) { 366 } else { 365 };
-        if remaining >= ydays {
-            remaining -= ydays;
-            y += 1;
-        } else {
-            break;
-        }
-    }
-    let mut m = 1u64;
-    while m <= 12 {
-        let mdays = month_days(y, m);
-        if remaining >= mdays {
-            remaining -= mdays;
-            m += 1;
-        } else {
-            break;
-        }
-    }
-    (y, m, remaining + 1)
-}
-
-fn is_leap(y: u64) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
-}
-
-fn month_days(y: u64, m: u64) -> u64 {
-    match m {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 => {
-            if is_leap(y) {
-                29
-            } else {
-                28
-            }
-        }
-        _ => 30,
-    }
 }

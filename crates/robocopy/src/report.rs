@@ -1,0 +1,276 @@
+//! 输出：Header / Options 回显 / Usage / 状态行 / 统计表格。
+
+use std::path::Path;
+use std::time::Instant;
+
+use crate::flags::{Class, Options, Stats, COP, EXT, FAI, MIS, TOT};
+use crate::time::fmt_now_cn;
+use crate::util::{fmt_bytes, fmt_bytes_sum, fmt_duration, thousands, thousands_decimal};
+
+/// 输出一行（行尾 CRLF，对齐原版重定向输出）。
+#[macro_export]
+macro_rules! outln {
+    ($($t:tt)*) => {{
+        use std::io::Write as _;
+        let mut o = std::io::stdout();
+        let _ = write!(o, $($t)*);
+        let _ = o.write_all(b"\r\n");
+    }};
+}
+
+/// 原样输出（不追加换行）。
+#[macro_export]
+macro_rules! out {
+    ($($t:tt)*) => {{
+        use std::io::Write as _;
+        let _ = write!(std::io::stdout(), $($t)*);
+    }};
+}
+
+/// 分类字段：Extra/Mismatch 用 `  {:<12}`（14 宽），其它用 `    {:<10}`（14 宽）。
+pub fn file_class_field(class: Class) -> String {
+    if class == Class::Extra || class == Class::Mismatch {
+        format!("  {:<12}", class.label())
+    } else {
+        format!("    {:<10}", class.label())
+    }
+}
+
+/// 目录分类字段：`  New Dir          `（2 缩进 + 分类左对齐 17 字符 = 19 宽）。
+pub fn dir_class_field(class: &str) -> String {
+    format!("  {class:<17}")
+}
+
+/// 文件状态行的分类字段。
+pub fn field_str(class: Class, opts: &Options) -> String {
+    if opts.no_class {
+        " ".repeat(14)
+    } else {
+        file_class_field(class)
+    }
+}
+
+/// 文件状态行的大小字段（对齐原版：<1024 字节数，否则 `32.0 m` 人类可读，右对齐 8）。
+pub fn sz_str(size: u64, opts: &Options) -> String {
+    if opts.no_size {
+        String::new()
+    } else {
+        format!("{:>8}", fmt_bytes(size))
+    }
+}
+
+/// 文件状态行。`progress=true` 时模拟原版重定向：文件行后 `\r` 回车再写 `100%  `。
+pub fn output_file_line(class: Class, size: u64, name: &str, opts: &Options, progress: bool) {
+    if opts.no_file_list {
+        return;
+    }
+    let line = format!("\t{}\t\t{}\t{}", field_str(class, opts), sz_str(size, opts), name);
+    if progress {
+        out!("{line}\r100%  \r\n");
+    } else {
+        outln!("{line}");
+    }
+}
+
+/// 额外文件行（/X 报告 / /PURGE 删除时）：`  *EXTRA File   <size>\t<name>`（size 为原始字节数）。
+pub fn output_extra_file_line(name: &str, size: u64, opts: &Options) {
+    if opts.no_file_list {
+        return;
+    }
+    let field = if opts.no_class {
+        " ".repeat(14)
+    } else {
+        file_class_field(Class::Extra)
+    };
+    let sz = if opts.no_size {
+        String::new()
+    } else {
+        format!("{:>8}", size)
+    };
+    outln!("\t{field}\t\t{sz}\t{name}");
+}
+
+const HELP: &str = include_str!("../help.txt");
+
+const USAGE_HEAD: &str = "       Simple Usage :: ROBOCOPY source destination /MIR\r\n\r\n             source :: Source Directory (drive:\\path or \\\\server\\share\\path).\r\n        destination :: Destination Dir  (drive:\\path or \\\\server\\share\\path).\r\n               /MIR :: Mirror a complete directory tree.\r\n\r\n    For more usage information run ROBOCOPY /?\r\n\r\n";
+
+/// 打印用法错误块（`****` 警告）。
+pub fn print_usage() {
+    out!("{USAGE_HEAD}");
+    outln!("{}", " ".repeat(58));
+    outln!("****  /MIR can DELETE files as well as copy them !");
+}
+
+/// 打印完整帮助（原版 /? 也返回 16）。
+pub fn print_help() {
+    out!("\r\n{HELP}");
+}
+
+/// 文件模式展示（多个用空格分隔）。
+fn files_mode(files: &[String]) -> String {
+    if files.is_empty() {
+        "*.*".to_string()
+    } else {
+        files.join(" ")
+    }
+}
+
+/// Options 行回显，固定顺序（实测原版 2026-08-11）。
+fn options_line(files: &[String], opts: &Options) -> String {
+    let mut v: Vec<String> = vec![files_mode(files)];
+    if opts.verbose {
+        v.push("/V".into());
+    }
+    if opts.report_extra {
+        v.push("/X".into());
+    }
+    if opts.no_size {
+        v.push("/NS".into());
+    }
+    if opts.no_class {
+        v.push("/NC".into());
+    }
+    if opts.no_job_summary {
+        v.push("/NJS".into());
+    }
+    if opts.no_job_header {
+        v.push("/NJH".into());
+    }
+    if opts.list_only {
+        v.push("/L".into());
+    }
+    // /S /E：/E 展开为 /S /E
+    if opts.subdirs_nonempty {
+        v.push("/S".into());
+    }
+    if opts.subdirs_all {
+        v.push("/E".into());
+    }
+    v.push("/DCOPY:DA".into());
+    v.push("/COPY:DAT".into());
+    if opts.move_all {
+        v.push("/MOVE".into());
+    }
+    if opts.move_files && !opts.move_all {
+        v.push("/MOV".into());
+    }
+    if opts.purge {
+        v.push("/PURGE".into());
+    }
+    if opts.mirror {
+        v.push("/MIR".into());
+    }
+    if opts.no_progress {
+        v.push("/NP".into());
+    }
+    if opts.include_same {
+        v.push("/IS".into());
+    }
+    if opts.include_tweaked {
+        v.push("/IT".into());
+    }
+    if let Some(mt) = opts.mt {
+        v.push(format!("/MT:{mt}"));
+    }
+    v.push(format!("/R:{}", opts.retries));
+    v.push(format!("/W:{}", opts.wait.as_secs()));
+    v.join(" ")
+}
+
+/// Header 块。
+pub fn print_header_with(
+    src: Option<&Path>,
+    dst: Option<&Path>,
+    files: &[String],
+    opts: &Options,
+    simple: bool,
+) {
+    outln!("-------------------------------------------------------------------------------");
+    outln!("{:<81}", "   ROBOCOPY     ::     Robust File Copy for Windows");
+    outln!("-------------------------------------------------------------------------------");
+    outln!("\r\n  Started : {}", fmt_now_cn());
+    if !simple {
+        match src {
+            Some(s) => outln!("{:>11} {}", "Source :", crate::util::display_dir(s)),
+            None => outln!("{:>11} ", "Source -"),
+        }
+        match dst {
+            Some(d) => outln!("{:>11} {}", "Dest :", crate::util::display_dir(d)),
+            None => outln!("{:>11} ", "Dest -"),
+        }
+        outln!("\r\n{:>11} {}", "Files :", files_mode(files));
+        outln!("\t    ");
+        outln!("{:>11} {} ", "Options :", options_line(files, opts));
+    }
+}
+
+/// 统计表格。
+pub fn print_summary(stats: &Stats, start: Instant) {
+    let d = &stats.dirs;
+    let f = &stats.files;
+    let b = &stats.bytes;
+    let d_skip = d[TOT].saturating_sub(d[COP] + d[MIS] + d[FAI]);
+    let f_skip = f[TOT].saturating_sub(f[COP] + f[MIS] + f[FAI]);
+    let b_skip = b[TOT].saturating_sub(b[COP] + b[MIS] + b[FAI]);
+
+    outln!(
+        "{:>20}{:>10}{:>10}{:>10}{:>10}{:>10}",
+        "Total", "Copied", "Skipped", "Mismatch", "FAILED", "Extras"
+    );
+    outln!(
+        "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
+        "Dirs :",
+        d[TOT],
+        d[COP],
+        d_skip,
+        d[MIS],
+        d[FAI],
+        d[EXT]
+    );
+    outln!(
+        "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
+        "Files :",
+        f[TOT],
+        f[COP],
+        f_skip,
+        f[MIS],
+        f[FAI],
+        f[EXT]
+    );
+    outln!(
+        "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
+        "Bytes :",
+        fmt_bytes_sum(b[TOT]),
+        fmt_bytes_sum(b[COP]),
+        fmt_bytes_sum(b_skip),
+        fmt_bytes_sum(b[MIS]),
+        fmt_bytes_sum(b[FAI]),
+        fmt_bytes_sum(b[EXT])
+    );
+
+    let elapsed = start.elapsed().as_secs();
+    // Times 行与其它行列宽一致（10），小时无前导零
+    outln!(
+        "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
+        "Times :",
+        fmt_duration(elapsed),
+        fmt_duration(elapsed),
+        "",
+        "",
+        fmt_duration(0),
+        fmt_duration(0)
+    );
+
+    // Speed（数字右对齐 23，MegaBytes/min 千位分隔三位小数）
+    let secs = start.elapsed().as_secs_f64();
+    let copied_bytes = b[COP] as f64;
+    if secs > 0.0 && copied_bytes > 0.0 {
+        let bps = copied_bytes / secs;
+        let mbpm = bps / 1048576.0 * 60.0;
+        outln!("\r\n\r\n{:>10} {:>23} Bytes/sec.", "Speed :", thousands(bps.round() as u64));
+        outln!("{:>10} {:>23} MegaBytes/min.", "Speed :", thousands_decimal(mbpm, 3));
+    }
+
+    outln!("{:>10} {}", "Ended :", fmt_now_cn());
+    outln!("");
+}
