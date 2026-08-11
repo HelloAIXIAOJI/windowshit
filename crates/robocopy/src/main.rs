@@ -19,7 +19,7 @@
 
 use std::env;
 use std::fs;
-use std::io;
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::thread;
@@ -556,17 +556,33 @@ fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut u32,
                     stats.file(COP, 1, sz);
                     *rc |= 1;
                     output_file_line(*class, sz, &name, opts, false);
-                } else if copy_with_retry(f, &dst_file, opts).is_ok() {
+                    continue;
+                }
+                // 是否动画进度：TTY 且未关进度、未关文件列表
+                let animate = !opts.no_progress && !opts.no_file_list && io::stdout().is_terminal();
+                if animate {
+                    // 文件行先不带换行打印，复制过程动态刷新百分比
+                    out!("\t{}\t\t{}\t{}", field_str(*class, opts), sz_str(sz, opts), name);
+                }
+                if copy_with_retry(f, &dst_file, opts, animate).is_ok() {
                     stats.file(COP, 1, sz);
                     *rc |= 1;
-                    // 实际复制：文件行后跟 `\r100%  `（无 /NP 时，对齐原版重定向字节）
-                    output_file_line(*class, sz, &name, opts, !opts.no_progress);
+                    if animate {
+                        out!("\r100%  \r\n");
+                    } else {
+                        // 非 TTY：一次性进度行（对齐原版重定向字节 `name\r100%  \r\n`）
+                        output_file_line(*class, sz, &name, opts, !opts.no_progress && !opts.no_file_list);
+                    }
                 } else {
                     stats.file(FAI, 1, sz);
                     *rc |= 8;
-                    output_file_line(*class, sz, &name, opts, false);
+                    if animate {
+                        out!("\r\n"); // 失败补换行
+                    } else {
+                        output_file_line(*class, sz, &name, opts, false);
+                    }
                 }
-                if (opts.move_files || opts.move_all) && !opts.list_only {
+                if opts.move_files || opts.move_all {
                     let _ = fs::remove_file(f);
                 }
             }
@@ -752,14 +768,45 @@ fn class_action(class: Class, opts: &Options) -> Action {
     }
 }
 
+/// 复制缓冲大小（1 MiB）。
+const BUF_SIZE: usize = 1024 * 1024;
+
+/// 逐块复制文件。`animate=true` 时每块后输出 `\rNN.N%`（TTY 动态进度，对齐原版一位小数）。
+fn copy_streaming(src: &Path, dst: &Path, animate: bool) -> io::Result<()> {
+    let mut reader = fs::File::open(src)?;
+    let mut writer = fs::File::create(dst)?;
+    let total = reader.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut buf = vec![0u8; BUF_SIZE];
+    let mut copied: u64 = 0;
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        writer.write_all(&buf[..n])?;
+        copied += n as u64;
+        if animate && total > 0 {
+            let pct = copied as f64 / total as f64 * 100.0;
+            // 原版格式：`3.1%`，100 时为 `100%`，左对齐 6 宽
+            let s = if pct >= 99.95 {
+                "100%".to_string()
+            } else {
+                format!("{pct:.1}%")
+            };
+            out!("\r{:<6}", s);
+        }
+    }
+    Ok(())
+}
+
 /// 复制文件，带 /R /W 重试。
 /// 对齐原版 /COPY:DAT：复制前清除目标只读位（否则覆盖会失败且无限重试），
 /// 复制后设置目标 mtime 与属性 = 源（这样二次运行分类为 Same）。
-fn copy_with_retry(src: &Path, dst: &Path, opts: &Options) -> io::Result<()> {
+fn copy_with_retry(src: &Path, dst: &Path, opts: &Options, animate: bool) -> io::Result<()> {
     for i in 0..=opts.retries {
         // 目标存在且只读时先清除只读位（原版行为）
         clear_readonly(dst);
-        match fs::copy(src, dst) {
+        match copy_streaming(src, dst, animate) {
             Ok(_) => {
                 // 还原源文件修改时间（原版行为：二次运行时间戳相同 → Same 跳过）
                 if let Ok(sm) = fs::metadata(src) {
@@ -847,22 +894,30 @@ fn dir_class_field(class: &str) -> String {
     format!("  {class:<17}")
 }
 
-/// 文件状态行。`progress=true` 时模拟原版：文件行后 `\r` 回车再写 `100%  `（重定向到文件也是此字节）。
+/// 文件状态行的分类字段。
+fn field_str(class: Class, opts: &Options) -> String {
+    if opts.no_class {
+        " ".repeat(14)
+    } else {
+        file_class_field(class)
+    }
+}
+
+/// 文件状态行的大小字段（对齐原版：<1024 字节数，否则 `32.0 m` 人类可读，右对齐 8）。
+fn sz_str(size: u64, opts: &Options) -> String {
+    if opts.no_size {
+        String::new()
+    } else {
+        format!("{:>8}", fmt_bytes(size))
+    }
+}
+
+/// 文件状态行。`progress=true` 时模拟原版重定向：文件行后 `\r` 回车再写 `100%  `。
 fn output_file_line(class: Class, size: u64, name: &str, opts: &Options, progress: bool) {
     if opts.no_file_list {
         return;
     }
-    let field = if opts.no_class {
-        " ".repeat(14)
-    } else {
-        file_class_field(class)
-    };
-    let sz = if opts.no_size {
-        String::new()
-    } else {
-        format!("{:>8}", size)
-    };
-    let line = format!("\t{field}\t\t{sz}\t{name}");
+    let line = format!("\t{}\t\t{}\t{}", field_str(class, opts), sz_str(size, opts), name);
     if progress {
         out!("{line}\r100%  \r\n");
     } else {
@@ -913,12 +968,12 @@ fn print_summary(stats: &Stats, start: Instant) {
     outln!(
         "{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}{:>10}",
         "Bytes :",
-        fmt_bytes(b[TOT]),
-        fmt_bytes(b[COP]),
-        fmt_bytes(b_skip),
-        fmt_bytes(b[MIS]),
-        fmt_bytes(b[FAI]),
-        fmt_bytes(b[EXT])
+        fmt_bytes_sum(b[TOT]),
+        fmt_bytes_sum(b[COP]),
+        fmt_bytes_sum(b_skip),
+        fmt_bytes_sum(b[MIS]),
+        fmt_bytes_sum(b[FAI]),
+        fmt_bytes_sum(b[EXT])
     );
     let elapsed = start.elapsed().as_secs();
     // Times 行与其它行列宽一致（10），小时无前导零
@@ -932,32 +987,49 @@ fn print_summary(stats: &Stats, start: Instant) {
         fmt_duration(0),
         fmt_duration(0)
     );
-    // Speed
+    // Speed（数字右对齐 23，MegaBytes/min 千位分隔三位小数）
     let secs = start.elapsed().as_secs_f64();
     let copied_bytes = b[COP] as f64;
     if secs > 0.0 && copied_bytes > 0.0 {
         let bps = copied_bytes / secs;
         let mbpm = bps / 1048576.0 * 60.0;
-        outln!("\r\n\r\n{:>10} {:>19} Bytes/sec.", "Speed :", thousands(bps.round() as u64));
-        outln!("{:>10} {:>19.3} MegaBytes/min.", "Speed :", mbpm);
+        outln!("\r\n\r\n{:>10} {:>23} Bytes/sec.", "Speed :", thousands(bps.round() as u64));
+        outln!("{:>10} {:>23} MegaBytes/min.", "Speed :", thousands_decimal(mbpm, 3));
     }
     outln!("{:>10} {}", "Ended :", fmt_now_cn());
     outln!("");
 }
 
-/// 文件大小格式化：<1024 原样，否则 KB/MB/GB（一位小数）。
+/// 文件大小格式化（文件状态行用）：<1024 字节数，否则 `{:.1} {unit}`（小写 k/m/g/t）。
 fn fmt_bytes(n: u64) -> String {
     if n < 1024 {
         n.to_string()
     } else {
-        let units = ["KB", "MB", "GB", "TB"];
+        let units = ["k", "m", "g", "t"];
         let mut v = n as f64;
         let mut u = 0;
-        while v >= 1024.0 && u < units.len() - 1 {
+        while v >= 1024.0 && u < units.len() {
             v /= 1024.0;
             u += 1;
         }
-        format!("{v:.1} {}", units[u])
+        // u=1→k, u=2→m, u=3→g, u=4→t
+        format!("{v:.1} {}", units[u.saturating_sub(1)])
+    }
+}
+
+/// 文件大小格式化（summary 统计表用）：<1024 字节数，否则 `{:.2} {unit}`。
+fn fmt_bytes_sum(n: u64) -> String {
+    if n < 1024 {
+        n.to_string()
+    } else {
+        let units = ["k", "m", "g", "t"];
+        let mut v = n as f64;
+        let mut u = 0;
+        while v >= 1024.0 && u < units.len() {
+            v /= 1024.0;
+            u += 1;
+        }
+        format!("{v:.2} {}", units[u.saturating_sub(1)])
     }
 }
 
@@ -979,6 +1051,22 @@ fn thousands(n: u64) -> String {
         out.push(c);
     }
     out
+}
+
+/// 千位分隔 + 固定小数位（整数部分千位分隔，小数位保留）。
+fn thousands_decimal(x: f64, precision: usize) -> String {
+    let s = format!("{x:.precision$}");
+    match s.split_once('.') {
+        Some((int, frac)) => {
+            let int_part: u64 = if int.is_empty() {
+                0
+            } else {
+                int.parse().unwrap_or(0)
+            };
+            format!("{},{frac}", thousands(int_part))
+        }
+        None => thousands(s.parse().unwrap_or(0)),
+    }
 }
 
 // ---------------------------------------------------------------------------
