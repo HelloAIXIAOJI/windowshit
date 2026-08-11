@@ -23,6 +23,18 @@ ROBOCOPY source destination [file [file]...] [options]
 | `/NP` `/NFL` `/NDL` `/NS` `/NC` | 输出控制 |
 | `/NJH` `/NJS` | 关闭 Job Header / Summary |
 | `/V` `/X` | 详细输出 / 报告所有 extra 文件 |
+| `/XF file...` | 排除文件（通配符，多值） |
+| `/XD dir...` | 排除目录（通配符，多值） |
+| `/XC` `/XN` `/XO` | 排除 Changed / Newer / Older |
+| `/XL` `/XX` | 排除 Lonely（源有目标无）/ Extra（目标多余） |
+| `/IS` `/IT` | 包含 Same / Tweaked |
+| `/MAX:n` `/MIN:n` | 按大小过滤 |
+| `/MAXAGE` `/MINAGE` | 按修改时间过滤（天） |
+| `/MAXLAD` `/MINLAD` | 按最后访问时间过滤（天） |
+| `/LEV:n` | 只复制前 n 层子目录 |
+| `/A` `/M` | 归档位过滤 / 复制并清除归档位 |
+| `/IA:attrs` `/XA:attrs` | 按属性包含 / 排除 |
+| `/XJ` `/XJF` `/XJD` | 排除 junction / junction 文件 / junction 目录 |
 | `/?` | 显示帮助 |
 
 ## 还原的原版行为
@@ -41,6 +53,9 @@ ROBOCOPY source destination [file [file]...] [options]
 - TTY 动态进度：逐块（1MiB）复制时 `\r` 覆盖式刷新百分比（`3.1%`…`100%`，一位小数）
 - 文件大小显示：<1024 字节数右对齐 8，否则 `32.0 m`（小写 k/m/g/t）；summary Bytes 列用两位小数 `32.00 m`
 - Speed 行：`Bytes/sec.` 千位分隔整数、`MegaBytes/min.` 千位分隔三位小数，数字右对齐 23
+- `/XF` `/XD` 在 Header 有独立行：`Exc Files :` / `Exc Dirs :`
+- 文件选择在**分类前**过滤（排除的文件不计入复制但计入目录行数字）
+- `/XJ` 排除 junction（Rust std 在 Windows 对 junction 的 `is_dir()` 返回 false，需用 reparse point 位判断）
 
 ## 与真原版的已知差异
 
@@ -48,6 +63,9 @@ ROBOCOPY source destination [file [file]...] [options]
 | --- | --- |
 | `Started` / `Ended` 行尾 | 中文字符宽度差异导致 `Started` 行行尾空格与本地化后原版可能差 1 字符 |
 | TTY 进度动画细节 | 已复刻动态百分比（1MB 块、一位小数）；终端捕获工具下百分比序列的 `\r` 渲染方式可能与原版有细微视觉差 |
+| `/MAXAGE` 等时间过滤精度 | 按天取整（原版精确到日），未做 `/FFT` FAT 时间补偿 |
+| Unix 属性 | `/IA` `/XA` 仅支持 R（只读）；Windows 支持全部属性字母 |
+| `/MAXLAD` `/MINLAD` | 已实现；Windows 下最后访问时间更新策略与 NTFS 相关，极端场景可能有差异 |
 
 ## 平台注意
 

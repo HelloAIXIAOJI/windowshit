@@ -25,8 +25,13 @@ use crate::flags::{Options, Stats, FLAGS};
 use crate::report::{print_header_with, print_help, print_summary, print_usage};
 use crate::util::{absolutize, display_dir};
 
+/// 解析 `/IA:xx` `/XA:xx` 属性字母串。
+fn attr_chars(v: &str) -> Vec<char> {
+    v.to_ascii_uppercase().chars().collect()
+}
+
 /// 解析参数，构造 Options。
-fn build_opts(parsed: &Parsed, mt: Option<usize>) -> Options {
+fn build_opts(parsed: &Parsed, mt: Option<usize>, xf: Vec<String>, xd: Vec<String>) -> Options {
     let s = parsed.flags.contains_key("S");
     let e = parsed.flags.contains_key("E");
     let mir = parsed.flags.contains_key("MIR");
@@ -43,6 +48,13 @@ fn build_opts(parsed: &Parsed, mt: Option<usize>) -> Options {
         .and_then(|v| *v)
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(30);
+    let num = |key: &str| {
+        parsed
+            .flags
+            .get(key)
+            .and_then(|v| *v)
+            .and_then(|v| v.parse::<u64>().ok())
+    };
     Options {
         subdirs_nonempty: s || e || mir,
         subdirs_all: e || mir,
@@ -66,7 +78,98 @@ fn build_opts(parsed: &Parsed, mt: Option<usize>) -> Options {
         no_job_summary: parsed.flags.contains_key("NJS"),
         include_same: parsed.flags.contains_key("IS"),
         include_tweaked: parsed.flags.contains_key("IT"),
+        xf,
+        xd,
+        exclude_changed: parsed.flags.contains_key("XC"),
+        exclude_newer: parsed.flags.contains_key("XN"),
+        exclude_older: parsed.flags.contains_key("XO"),
+        exclude_lonely: parsed.flags.contains_key("XL"),
+        exclude_extra: parsed.flags.contains_key("XX"),
+        max_size: num("MAX"),
+        min_size: num("MIN"),
+        max_age: num("MAXAGE"),
+        min_age: num("MINAGE"),
+        max_lad: num("MAXLAD"),
+        min_lad: num("MINLAD"),
+        archive: parsed.flags.contains_key("A"),
+        archive_move: parsed.flags.contains_key("M"),
+        include_attrs: parsed
+            .flags
+            .get("IA")
+            .and_then(|v| *v)
+            .map(attr_chars)
+            .unwrap_or_default(),
+        exclude_attrs: parsed
+            .flags
+            .get("XA")
+            .and_then(|v| *v)
+            .map(attr_chars)
+            .unwrap_or_default(),
+        lev: parsed
+            .flags
+            .get("LEV")
+            .and_then(|v| *v)
+            .and_then(|v| v.parse::<u32>().ok()),
+        exclude_junction: parsed.flags.contains_key("XJ"),
+        exclude_junction_file: parsed.flags.contains_key("XJF"),
+        exclude_junction_dir: parsed.flags.contains_key("XJD"),
     }
+}
+
+/// 预提取 `/XF` `/XD` 多值开关（值取到下一个开关为止），并返回其余参数。
+fn preextract_multi(raw: &[String]) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut xf: Vec<String> = Vec::new();
+    let mut xd: Vec<String> = Vec::new();
+    let mut rest: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < raw.len() {
+        let a = &raw[i];
+        let up = a
+            .strip_prefix('/')
+            .or_else(|| a.strip_prefix('-'))
+            .map(|s| s.to_ascii_uppercase());
+        match up.as_deref() {
+            Some(u) if u == "XF" || u.starts_with("XF:") => {
+                if let Some(v) = u.strip_prefix("XF:") {
+                    if !v.is_empty() {
+                        xf.push(v.to_string());
+                    }
+                }
+                i += 1;
+                while i < raw.len() {
+                    let b = &raw[i];
+                    if b.starts_with('/') || b.starts_with('-') {
+                        break;
+                    }
+                    xf.push(b.clone());
+                    i += 1;
+                }
+                continue;
+            }
+            Some(u) if u == "XD" || u.starts_with("XD:") => {
+                if let Some(v) = u.strip_prefix("XD:") {
+                    if !v.is_empty() {
+                        xd.push(v.to_string());
+                    }
+                }
+                i += 1;
+                while i < raw.len() {
+                    let b = &raw[i];
+                    if b.starts_with('/') || b.starts_with('-') {
+                        break;
+                    }
+                    xd.push(b.clone());
+                    i += 1;
+                }
+                continue;
+            }
+            _ => {
+                rest.push(a.clone());
+            }
+        }
+        i += 1;
+    }
+    (xf, xd, rest)
 }
 
 /// 源目录不可访问错误行（对齐原版）。
@@ -113,13 +216,16 @@ fn main() -> ExitCode {
         rest.push(a.clone());
     }
 
+    // 预提取 /XF /XD 多值
+    let (xf, xd, rest) = preextract_multi(&raw);
+
     // robocopy 对未知开关静默忽略
     let parsed = match parse(&rest, FLAGS, Unknown::Ignore) {
         Ok(p) => p,
         Err(_) => Parsed::default(),
     };
 
-    let mut opts = build_opts(&parsed, mt);
+    let mut opts = build_opts(&parsed, mt, xf, xd);
 
     // 位置参数：source destination [file...]
     let mut paths = parsed.paths.iter();
@@ -194,7 +300,7 @@ fn main() -> ExitCode {
         }
     }
 
-    copy::walk(&src, &dst, &opts, &mut stats, &mut rc, !dst_existed);
+    copy::walk(&src, &dst, &opts, &mut stats, &mut rc, !dst_existed, 1);
 
     if !opts.no_job_summary {
         crate::outln!("\r\n------------------------------------------------------------------------------\r\n");

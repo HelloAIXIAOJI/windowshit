@@ -169,6 +169,66 @@ fn options_line(files: &[String], opts: &Options) -> String {
     if opts.include_tweaked {
         v.push("/IT".into());
     }
+    if opts.exclude_lonely {
+        v.push("/XL".into());
+    }
+    if opts.exclude_extra {
+        v.push("/XX".into());
+    }
+    if opts.exclude_older {
+        v.push("/XO".into());
+    }
+    if opts.exclude_newer {
+        v.push("/XN".into());
+    }
+    if opts.exclude_changed {
+        v.push("/XC".into());
+    }
+    // /XJ 与 /XJF /XJD：实测 /XJ 时只回显 /XJ；仅 /XJF /XJD 时回显 `/XJF /XJD`
+    if opts.exclude_junction {
+        v.push("/XJ".into());
+    } else {
+        if opts.exclude_junction_file {
+            v.push("/XJF".into());
+        }
+        if opts.exclude_junction_dir {
+            v.push("/XJD".into());
+        }
+    }
+    if opts.archive_move {
+        v.push("/M".into());
+    } else if opts.archive {
+        v.push("/A".into());
+    }
+    if !opts.include_attrs.is_empty() {
+        let s: String = opts.include_attrs.iter().collect();
+        v.push(format!("/IA:{s}"));
+    }
+    if !opts.exclude_attrs.is_empty() {
+        let s: String = opts.exclude_attrs.iter().collect();
+        v.push(format!("/XA:{s}"));
+    }
+    if let Some(n) = opts.max_size {
+        v.push(format!("/MAX:{n}"));
+    }
+    if let Some(n) = opts.min_size {
+        v.push(format!("/MIN:{n}"));
+    }
+    if let Some(n) = opts.max_age {
+        v.push(format!("/MAXAGE:{n}"));
+    }
+    if let Some(n) = opts.min_age {
+        v.push(format!("/MINAGE:{n}"));
+    }
+    if let Some(n) = opts.max_lad {
+        v.push(format!("/MAXLAD:{n}"));
+    }
+    if let Some(n) = opts.min_lad {
+        v.push(format!("/MINLAD:{n}"));
+    }
+    if let Some(n) = opts.lev {
+        v.push(format!("/LEV:{n}"));
+    }
     if let Some(mt) = opts.mt {
         v.push(format!("/MT:{mt}"));
     }
@@ -200,6 +260,15 @@ pub fn print_header_with(
         }
         outln!("\r\n{:>11} {}", "Files :", files_mode(files));
         outln!("\t    ");
+        // /XF /XD 有独立行（实测原版格式：Exc Files 顶格、Exc Dirs 缩进 1 空格）
+        if !opts.xf.is_empty() {
+            outln!("Exc Files : {}", opts.xf.join(" "));
+            outln!("\t    ");
+        }
+        if !opts.xd.is_empty() {
+            outln!(" Exc Dirs : {}", opts.xd.join(" "));
+            outln!("\t    ");
+        }
         outln!("{:>11} {} ", "Options :", options_line(files, opts));
     }
 }

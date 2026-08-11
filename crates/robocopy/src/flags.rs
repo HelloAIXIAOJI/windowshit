@@ -67,9 +67,9 @@ pub const FLAGS: &[Flag] = &[
     Flag::new("MINLAD", Kind::Value),
     Flag::new("FFT", Kind::Ignore),
     Flag::new("DST", Kind::Ignore),
-    Flag::new("XJ", Kind::Ignore),
-    Flag::new("XJD", Kind::Ignore),
-    Flag::new("XJF", Kind::Ignore),
+    Flag::new("XJ", Kind::Flag),
+    Flag::new("XJD", Kind::Flag),
+    Flag::new("XJF", Kind::Flag),
     // —— Windows 专属 / 暂不实现 ——
     Flag::new("Z", Kind::Ignore),
     Flag::new("B", Kind::Ignore),
@@ -162,6 +162,28 @@ pub struct Options {
     pub no_job_summary: bool, // /NJS
     pub include_same: bool,    // /IS：Same 文件也复制
     pub include_tweaked: bool, // /IT：Tweaked 文件也复制
+    // 阶段 2：文件选择与过滤
+    pub xf: Vec<String>,       // /XF：排除文件（通配符）
+    pub xd: Vec<String>,       // /XD：排除目录
+    pub exclude_changed: bool, // /XC
+    pub exclude_newer: bool,   // /XN
+    pub exclude_older: bool,   // /XO
+    pub exclude_lonely: bool,  // /XL：排除源有目标无
+    pub exclude_extra: bool,   // /XX：排除目标多余
+    pub max_size: Option<u64>, // /MAX:n
+    pub min_size: Option<u64>, // /MIN:n
+    pub max_age: Option<u64>,  // /MAXAGE:n（天）
+    pub min_age: Option<u64>,  // /MINAGE:n（天）
+    pub max_lad: Option<u64>,  // /MAXLAD:n（天）
+    pub min_lad: Option<u64>,  // /MINLAD:n（天）
+    pub archive: bool,          // /A：只复制归档位文件
+    pub archive_move: bool,     // /M：复制并清除归档位
+    pub include_attrs: Vec<char>, // /IA:...
+    pub exclude_attrs: Vec<char>, // /XA:...
+    pub lev: Option<u32>,         // /LEV:n
+    pub exclude_junction: bool,     // /XJ
+    pub exclude_junction_file: bool, // /XJF
+    pub exclude_junction_dir: bool,  // /XJD
 }
 
 impl Default for Options {
@@ -189,6 +211,27 @@ impl Default for Options {
             no_job_summary: false,
             include_same: false,
             include_tweaked: false,
+            xf: Vec::new(),
+            xd: Vec::new(),
+            exclude_changed: false,
+            exclude_newer: false,
+            exclude_older: false,
+            exclude_lonely: false,
+            exclude_extra: false,
+            max_size: None,
+            min_size: None,
+            max_age: None,
+            min_age: None,
+            max_lad: None,
+            min_lad: None,
+            archive: false,
+            archive_move: false,
+            include_attrs: Vec::new(),
+            exclude_attrs: Vec::new(),
+            lev: None,
+            exclude_junction: false,
+            exclude_junction_file: false,
+            exclude_junction_dir: false,
         }
     }
 }

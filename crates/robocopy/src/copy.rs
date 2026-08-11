@@ -27,11 +27,16 @@ enum Action {
 /// 分类后动作。
 fn class_action(class: Class, opts: &Options) -> Action {
     match class {
-        // 时间戳或大小不同 → 复制
-        Class::New | Class::Newer | Class::Older | Class::Changed => Action::Copy,
-        // /IS：Same 也复制；/IT：Tweaked 也复制
-        Class::Same if opts.include_same => Action::Copy,
-        Class::Tweaked if opts.include_tweaked => Action::Copy,
+        Class::New if opts.exclude_lonely => Action::Skip, // /XL
+        Class::New => Action::Copy,
+        Class::Newer if opts.exclude_newer => Action::Skip, // /XN
+        Class::Newer => Action::Copy,
+        Class::Older if opts.exclude_older => Action::Skip, // /XO
+        Class::Older => Action::Copy,
+        Class::Changed if opts.exclude_changed => Action::Skip, // /XC
+        Class::Changed => Action::Copy,
+        Class::Same if opts.include_same => Action::Copy, // /IS
+        Class::Tweaked if opts.include_tweaked => Action::Copy, // /IT
         Class::Same | Class::Tweaked => Action::Skip,
         Class::Extra | Class::Mismatch => Action::Mismatch,
     }
@@ -154,6 +159,182 @@ fn set_file_attrs(p: &Path, attrs: u32) {
     }
 }
 
+/// 文件是否设置归档位（/A /M 用）。Unix 无归档位，视为恒 true。
+fn has_archive(_p: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        file_attrs(_p) & 0x20 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        true
+    }
+}
+
+/// 清除源文件归档位（/M 复制后）。
+#[cfg(windows)]
+fn clear_archive(p: &Path) {
+    let a = file_attrs(p);
+    if a & 0x20 != 0 {
+        set_file_attrs(p, a & !0x20);
+    }
+}
+
+/// 文件属性字母集合（/IA /XA 用）。
+#[cfg(windows)]
+fn attr_letters(p: &Path) -> Vec<char> {
+    let a = file_attrs(p);
+    let mut v = Vec::new();
+    if a & 0x1 != 0 {
+        v.push('R');
+    }
+    if a & 0x2 != 0 {
+        v.push('H');
+    }
+    if a & 0x4 != 0 {
+        v.push('S');
+    }
+    if a & 0x20 != 0 {
+        v.push('A');
+    }
+    if a & 0x80 != 0 {
+        v.push('N');
+    }
+    if a & 0x100 != 0 {
+        v.push('T');
+    }
+    if a & 0x800 != 0 {
+        v.push('C');
+    }
+    if a & 0x1000 != 0 {
+        v.push('O');
+    }
+    if a & 0x2000 != 0 {
+        v.push('I');
+    }
+    if a & 0x4000 != 0 {
+        v.push('E');
+    }
+    v
+}
+
+/// Unix：仅支持只读属性 R。
+#[cfg(not(windows))]
+fn attr_letters(p: &Path) -> Vec<char> {
+    if fs::metadata(p).map(|m| m.permissions().readonly()).unwrap_or(false) {
+        vec!['R']
+    } else {
+        Vec::new()
+    }
+}
+
+/// /IA 包含匹配：文件的任一属性字母命中 include 列表。
+fn include_attr_match(letters: &[char], include: &[char]) -> bool {
+    include.is_empty() || letters.iter().any(|c| include.contains(c))
+}
+
+/// /XA 排除匹配：文件的任一属性字母命中 exclude 列表。
+fn exclude_attr_match(letters: &[char], exclude: &[char]) -> bool {
+    !exclude.is_empty() && letters.iter().any(|c| exclude.contains(c))
+}
+
+/// 时间过滤（/MAXAGE /MINAGE /MAXLAD /MINLAD，天）。返回 true 表示应排除。
+fn age_excluded(meta: &fs::Metadata, opts: &Options) -> bool {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let secs_of = |day: u64| day.saturating_mul(86400);
+    let mtime = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
+    let atime = meta.accessed().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
+    if let (Some(m), Some(n)) = (mtime, opts.max_age) {
+        if now.saturating_sub(m) > secs_of(n) {
+            return true; // 比 n 天更旧 → /MAXAGE 排除
+        }
+    }
+    if let (Some(m), Some(n)) = (mtime, opts.min_age) {
+        if now.saturating_sub(m) < secs_of(n) {
+            return true; // 比 n 天更新 → /MINAGE 排除
+        }
+    }
+    if let (Some(a), Some(n)) = (atime, opts.max_lad) {
+        if now.saturating_sub(a) > secs_of(n) {
+            return true; // 超过 n 天未访问 → /MAXLAD 排除
+        }
+    }
+    if let (Some(a), Some(n)) = (atime, opts.min_lad) {
+        if now.saturating_sub(a) < secs_of(n) {
+            return true; // 小于 n 天未访问 → /MINLAD 排除
+        }
+    }
+    false
+}
+
+/// 文件级过滤（/XF /MAX /MIN /MAXAGE 等）。返回 true 表示应排除。
+fn file_excluded(src: &Path, name: &str, meta: &fs::Metadata, opts: &Options) -> bool {
+    if !opts.xf.is_empty() && matches_pattern(name, &opts.xf) {
+        return true;
+    }
+    if let Some(n) = opts.max_size {
+        if meta.len() > n {
+            return true;
+        }
+    }
+    if let Some(n) = opts.min_size {
+        if meta.len() < n {
+            return true;
+        }
+    }
+    if opts.max_age.is_some() || opts.min_age.is_some() || opts.max_lad.is_some() || opts.min_lad.is_some()
+    {
+        if age_excluded(meta, opts) {
+            return true;
+        }
+    }
+    if opts.archive || opts.archive_move {
+        if !has_archive(src) {
+            return true;
+        }
+    }
+    if !opts.include_attrs.is_empty() || !opts.exclude_attrs.is_empty() {
+        let letters = attr_letters(src);
+        if !include_attr_match(&letters, &opts.include_attrs) {
+            return true;
+        }
+        if exclude_attr_match(&letters, &opts.exclude_attrs) {
+            return true;
+        }
+    }
+    false
+}
+
+/// 目录是否被 /XD 排除或 /XJ 排除。
+fn dir_excluded(src: &Path, name: &str, opts: &Options) -> bool {
+    if !opts.xd.is_empty() && matches_pattern(name, &opts.xd) {
+        return true;
+    }
+    if opts.exclude_junction && is_reparse_point(src) {
+        return true;
+    }
+    false
+}
+
+/// 是否重解析点（Windows junction/symlink）。
+/// 注意用 `symlink_metadata`（不跟随），否则 junction 会被解析到目标而识别不出。
+fn is_reparse_point(p: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        fs::symlink_metadata(p)
+            .map(|m| m.file_attributes() & 0x400 != 0) // FILE_ATTRIBUTE_REPARSE_POINT
+            .unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    {
+        fs::symlink_metadata(p).map(|m| m.file_type().is_symlink()).unwrap_or(false)
+    }
+}
+
 /// 逐块复制文件。`animate=true` 时每块后输出 `\rNN.N%`（TTY 动态进度，对齐原版一位小数）。
 fn copy_streaming(src: &Path, dst: &Path, animate: bool) -> io::Result<()> {
     let mut reader = fs::File::open(src)?;
@@ -209,8 +390,17 @@ fn copy_with_retry(src: &Path, dst: &Path, opts: &Options, animate: bool) -> io:
     unreachable!()
 }
 
-/// 递归遍历 src 目录。`new_dir`：目标目录为本次新建（显示 `New Dir`）。`rc` 累积退出码标志。
-pub fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut u32, new_dir: bool) {
+/// 递归遍历 src 目录。`new_dir`：目标目录为本次新建（显示 `New Dir`）。
+/// `level`：当前层级（根=1），用于 /LEV 限制。`rc` 累积退出码标志。
+pub fn walk(
+    src: &Path,
+    dst: &Path,
+    opts: &Options,
+    stats: &mut Stats,
+    rc: &mut u32,
+    new_dir: bool,
+    level: u32,
+) {
     let entries = match fs::read_dir(src) {
         Ok(e) => e,
         Err(_) => {
@@ -224,7 +414,13 @@ pub fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut 
     let mut dirs: Vec<PathBuf> = Vec::new();
     for e in entries.flatten() {
         let p = e.path();
-        if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        // 注意：Rust std 在 Windows 上 `symlink_metadata().is_dir()` 对 junction 返回 false，
+        // 需额外检查 reparse point（junction 一律视为目录）
+        let is_dir = match fs::symlink_metadata(&p) {
+            Ok(m) => m.is_dir() || is_reparse_point(&p),
+            Err(_) => false,
+        };
+        if is_dir {
             dirs.push(p);
         } else {
             files.push(p);
@@ -235,7 +431,7 @@ pub fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut 
 
     stats.dir(TOT, 1); // 每个访问的目录计入 Total
 
-    // 第一遍：分类文件，统计本目录匹配的文件数（供目录行数字，含跳过的）
+    // 第一遍：分类文件，统计本目录匹配的文件数（供目录行数字，含 /XF /MAX 等排除项）
     let mut matched_count: u64 = 0;
     let mut plan: Vec<(PathBuf, Class)> = Vec::new();
     for f in &files {
@@ -244,6 +440,18 @@ pub fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut 
             continue;
         }
         matched_count += 1;
+        // /XJF 排除 junction 文件
+        if opts.exclude_junction_file && is_reparse_point(f) {
+            continue;
+        }
+        let meta = match fs::metadata(f) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        // /XF /MAX /MIN /MAXAGE /MINAGE /MAXLAD /MINLAD /A /M /IA /XA 排除
+        if file_excluded(f, &name, &meta, opts) {
+            continue;
+        }
         let dst_file = dst.join(f.file_name().unwrap());
         let class = classify(f, &dst_file, opts);
         plan.push((f.clone(), class));
@@ -297,6 +505,11 @@ pub fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut 
                         output_file_line(*class, sz, &name, opts, false);
                     }
                 }
+                // /M：复制并清除源归档位
+                if opts.archive_move {
+                    #[cfg(windows)]
+                    clear_archive(f);
+                }
                 if opts.move_files || opts.move_all {
                     let _ = fs::remove_file(f);
                 }
@@ -328,7 +541,11 @@ pub fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut 
             if in_src {
                 continue;
             }
-            if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            let is_dir = match fs::symlink_metadata(&p) {
+                Ok(m) => m.is_dir() || is_reparse_point(&p),
+                Err(_) => false,
+            };
+            if is_dir {
                 extra_dirs.push(p);
             } else {
                 extra_files.push(p);
@@ -337,7 +554,10 @@ pub fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut 
         extra_files.sort();
         extra_dirs.sort();
 
-        if opts.purge {
+        // /XX：排除 extra（不删除不报告），优先于 /PURGE
+        if opts.exclude_extra {
+            // 不处理
+        } else if opts.purge {
             for ef in &extra_files {
                 let name = ef.file_name().unwrap_or_default().to_string_lossy();
                 let sz = ef.metadata().map(|m| m.len()).unwrap_or(0);
@@ -366,7 +586,17 @@ pub fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut 
     }
 
     // 递归子目录
+    let max_level = opts.lev.unwrap_or(u32::MAX);
     for d in &dirs {
+        let name = d.file_name().unwrap_or_default().to_string_lossy();
+        // /XD 排除目录（整棵跳过）；/XJ /XJD 排除 junction 目录
+        if dir_excluded(d, &name, opts) {
+            continue;
+        }
+        // /LEV:n 限制层级
+        if level >= max_level {
+            continue;
+        }
         let dst_dir = dst.join(d.file_name().unwrap());
         let empty = is_dir_empty(d);
         let need = if opts.subdirs_all {
@@ -389,6 +619,6 @@ pub fn walk(src: &Path, dst: &Path, opts: &Options, stats: &mut Stats, rc: &mut 
             }
         }
         // /L 不创建目录，但目录在目标中不存在仍算 New Dir
-        walk(d, &dst_dir, opts, stats, rc, !dst_dir_existed);
+        walk(d, &dst_dir, opts, stats, rc, !dst_dir_existed, level + 1);
     }
 }
