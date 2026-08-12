@@ -3,7 +3,7 @@ name = "windowshit-winreg"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Windowshit 公共注册表读取层（Windows 专属，非 Windows 空实现）"
+description = "Windowshit 公共注册表读取层（Windows 读注册表；非 Windows 参考 regedit 读 /etc、~/.config、/boot 配置文件夹）"
 
 [dependencies]
 
