@@ -188,7 +188,7 @@ dependencies = [
 
 [[package]]
 name = "choice"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossterm",
 ]
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "clip"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arboard",
  "windowshit-i18n",
@@ -392,7 +392,7 @@ checksum = "dea2df4cf52843e0452895c455a1a2cfbb842a1e7329671acf418fdc53ed4c59"
 
 [[package]]
 name = "expand"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cab",
  "windowshit-args",
@@ -406,7 +406,7 @@ checksum = "caf1079563223d5d59d83c85886a56e586cfd5c1a26292e971a0fa266531ac5a"
 
 [[package]]
 name = "fc"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windowshit-args",
 ]
@@ -428,7 +428,7 @@ checksum = "26b73573e6edcd2af0cdf47bd6cb58f0b3839491263c314eaad1ccf24430e1de"
 
 [[package]]
 name = "findstr"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "regex",
  "windowshit-args",
@@ -526,7 +526,7 @@ dependencies = [
 
 [[package]]
 name = "getmac"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windowshit-args",
  "windowshit-i18n",
@@ -597,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "hostname"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "hostname 0.4.2",
  "windowshit-i18n",
@@ -683,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "ipconfig"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windowshit-i18n",
  "windowshit-netinfo",
@@ -862,7 +862,7 @@ checksum = "d3d25b0e0b648a86960ac23b7ad4abb9717601dec6f66c165f5b037f3f03065f"
 
 [[package]]
 name = "makecab"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cab",
  "time",
@@ -905,7 +905,7 @@ dependencies = [
 
 [[package]]
 name = "more"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windowshit-args",
  "windowshit-i18n",
@@ -1380,7 +1380,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pathping"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dns-lookup",
  "socket2",
@@ -1404,7 +1404,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "ping"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dns-lookup",
  "socket2",
@@ -1639,7 +1639,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "replace"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windows-sys 0.52.0",
  "windowshit-args",
@@ -1647,7 +1647,7 @@ dependencies = [
 
 [[package]]
 name = "robocopy"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
@@ -1763,7 +1763,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "shutdown"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windows-sys 0.61.2",
  "windowshit-args",
@@ -1830,7 +1830,7 @@ dependencies = [
 
 [[package]]
 name = "sort"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windowshit-args",
  "windowshit-i18n",
@@ -1900,7 +1900,7 @@ dependencies = [
 
 [[package]]
 name = "systeminfo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "hostname 0.4.2",
@@ -1913,7 +1913,7 @@ dependencies = [
 
 [[package]]
 name = "taskkill"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "kill_tree",
  "sysinfo",
@@ -1923,7 +1923,7 @@ dependencies = [
 
 [[package]]
 name = "tasklist"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "sysinfo",
  "windows-sys 0.52.0",
@@ -2056,7 +2056,7 @@ dependencies = [
 
 [[package]]
 name = "tracert"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dns-lookup",
  "nex-packet",
@@ -2097,7 +2097,7 @@ dependencies = [
 
 [[package]]
 name = "tree"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windows-sys 0.52.0",
  "windowshit-args",
@@ -2106,7 +2106,7 @@ dependencies = [
 
 [[package]]
 name = "type"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windowshit-i18n",
 ]
@@ -2146,7 +2146,7 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "ver"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "os_info",
  "windowshit-i18n",
@@ -2259,7 +2259,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "where"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windowshit-args",
  "windowshit-i18n",
@@ -2279,7 +2279,7 @@ dependencies = [
 
 [[package]]
 name = "whoami"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "whoami 2.1.2",
  "windowshit-i18n",
@@ -2708,11 +2708,11 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 
 [[package]]
 name = "windowshit-args"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "windowshit-i18n"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "fluent",
  "sys-locale",
@@ -2722,7 +2722,7 @@ dependencies = [
 
 [[package]]
 name = "windowshit-netinfo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ipconfig 0.3.4",
  "netdev 0.46.0",
@@ -2730,7 +2730,7 @@ dependencies = [
 
 [[package]]
 name = "windowshit-trace-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "nex-packet",
  "socket2",
@@ -2739,7 +2739,7 @@ dependencies = [
 
 [[package]]
 name = "windowshit-winreg"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "windows-sys 0.52.0",
 ]
